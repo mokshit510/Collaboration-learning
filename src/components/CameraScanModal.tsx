@@ -1,0 +1,170 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { X, Camera, RefreshCw } from 'lucide-react';
+
+
+interface CameraScanModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onCapture: () => void;
+}
+
+export const CameraScanModal: React.FC<CameraScanModalProps> = ({
+  isOpen,
+  onClose,
+  onCapture,
+}) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [hasCamera, setHasCamera] = useState<boolean | null>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        setStream(null);
+      }
+      setHasCamera(null);
+      return;
+    }
+
+    // Try starting camera
+    async function startCamera() {
+      try {
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+        setStream(mediaStream);
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+        }
+        setHasCamera(true);
+      } catch (err) {
+        // Fallback to simulated high-res scanner view
+        setHasCamera(false);
+      }
+    }
+
+    startCamera();
+
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleCaptureClick = () => {
+    setIsScanning(true);
+    setTimeout(() => {
+      setIsScanning(false);
+      onCapture();
+      onClose();
+    }, 900);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="bg-[#071A2F] text-white rounded-2xl max-w-xl w-full border border-blue-900 shadow-2xl overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="px-5 py-3.5 border-b border-blue-950 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Camera className="w-5 h-5 text-blue-400" />
+            <h3 className="text-sm font-bold text-white tracking-wide">
+              Document Optical Scanner — Checkpoint Feed
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Viewfinder Area */}
+        <div className="relative aspect-4/3 bg-slate-950 flex items-center justify-center overflow-hidden">
+          {hasCamera && (
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
+          )}
+
+          {!hasCamera && (
+            <div className="relative w-full h-full bg-linear-to-b from-slate-900 to-[#0B213A] flex items-center justify-center p-6">
+              {/* Simulated ID Card in Scanner */}
+              <div className="relative w-72 h-44 rounded-lg border-2 border-dashed border-blue-400/80 bg-slate-800/80 shadow-2xl p-4 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-cyan-300 font-bold">
+                    SCANNER ID: S-402-A
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="text-[9px] text-emerald-400 font-mono">READY</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-center gap-3">
+                  <div className="w-14 h-16 rounded bg-slate-700 border border-slate-600 flex items-center justify-center text-slate-400">
+                    <Camera className="w-6 h-6 opacity-60" />
+                  </div>
+                  <div className="space-y-1.5 flex-1">
+                    <div className="h-2 w-24 bg-slate-700 rounded" />
+                    <div className="h-2 w-32 bg-slate-700 rounded" />
+                    <div className="h-2 w-20 bg-slate-700 rounded" />
+                  </div>
+                </div>
+
+                <div className="text-[9px] font-mono text-slate-400 tracking-wider text-center">
+                  ALIGN PASSPORT BIOMETRIC PAGE IN THE RECTANGLE
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Scanner Laser Sweep Animation */}
+          <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_#38bdf8] animate-scan-laser pointer-events-none" />
+
+          {/* Optical Alignment Reticle Corner Guides */}
+          <div className="absolute inset-8 pointer-events-none border border-blue-500/20">
+            <div className="absolute -top-1 -left-1 w-5 h-5 border-t-2 border-l-2 border-cyan-400" />
+            <div className="absolute -top-1 -right-1 w-5 h-5 border-t-2 border-r-2 border-cyan-400" />
+            <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-2 border-l-2 border-cyan-400" />
+            <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-2 border-r-2 border-cyan-400" />
+          </div>
+
+          {/* Scanning In-Progress Overlay */}
+          {isScanning && (
+            <div className="absolute inset-0 bg-blue-900/80 backdrop-blur-xs flex flex-col items-center justify-center text-white z-20">
+              <RefreshCw className="w-10 h-10 animate-spin text-cyan-300 mb-2" />
+              <p className="text-sm font-bold tracking-wide">Acquiring High-Resolution Scan...</p>
+              <p className="text-xs text-cyan-200/80">300 DPI Optical Normalization</p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer Controls */}
+        <div className="p-4 bg-[#091E36] border-t border-blue-950 flex items-center justify-between">
+          <div className="text-xs text-slate-400">
+            Auto-detects ICAO MRZ and UV security watermarks
+          </div>
+
+          <button
+            onClick={handleCaptureClick}
+            disabled={isScanning}
+            className="flex items-center gap-2 px-5 py-2.5 bg-[#1677E8] hover:bg-blue-600 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+          >
+            <Camera className="w-4 h-4" />
+            <span>Capture Document</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
