@@ -4,7 +4,7 @@ import { X, Camera, RefreshCw } from 'lucide-react';
 interface CameraScanModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCapture: () => void;
+  onCapture: (file: File) => void;
 }
 
 export const CameraScanModal: React.FC<CameraScanModalProps> = ({
@@ -64,11 +64,105 @@ export const CameraScanModal: React.FC<CameraScanModalProps> = ({
 
   const handleCaptureClick = () => {
     setIsScanning(true);
+
     setTimeout(() => {
-      setIsScanning(false);
-      onCapture();
-      onClose();
-    }, 900);
+      const canvas = document.createElement('canvas');
+
+      if (hasCamera && videoRef.current && videoRef.current.videoWidth > 0) {
+        canvas.width = videoRef.current.videoWidth;
+        canvas.height = videoRef.current.videoHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(
+            (blob) => {
+              setIsScanning(false);
+              if (blob) {
+                const file = new File([blob], `camera_scan_${Date.now()}.jpg`, {
+                  type: 'image/jpeg',
+                });
+                onCapture(file);
+              }
+              onClose();
+            },
+            'image/jpeg',
+            0.95
+          );
+          return;
+        }
+      }
+
+      // Simulated Checkpoint Optical Scanner Frame Generation
+      canvas.width = 1200;
+      canvas.height = 840;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        // Scanner plate backdrop
+        ctx.fillStyle = '#0a192f';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Passport document card
+        ctx.fillStyle = '#e6edf4';
+        if (typeof ctx.roundRect === 'function') {
+          ctx.roundRect(100, 70, 1000, 700, 14);
+          ctx.fill();
+        } else {
+          ctx.fillRect(100, 70, 1000, 700);
+        }
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Header
+        ctx.fillStyle = '#071a2f';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.fillText('REPUBLIC OF INDIA / PASSPORT', 150, 130);
+
+        // Portrait photo box
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillRect(150, 170, 220, 280);
+        ctx.strokeStyle = '#64748b';
+        ctx.strokeRect(150, 170, 220, 280);
+        ctx.fillStyle = '#334155';
+        ctx.font = '16px sans-serif';
+        ctx.fillText('OPTICAL VIZ PHOTO', 170, 310);
+
+        // Text fields
+        ctx.fillStyle = '#1e293b';
+        ctx.font = 'bold 20px monospace';
+        ctx.fillText('Type: P       Code: IND     Doc: T1234567', 420, 210);
+        ctx.fillText('Surname:      SHARMA', 420, 260);
+        ctx.fillText('Given Name:   RAHUL', 420, 310);
+        ctx.fillText('Nationality:  INDIAN', 420, 360);
+        ctx.fillText('DOB:          14/02/1999    Sex: M', 420, 410);
+
+        // MRZ Strip
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(120, 580, 960, 150);
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 22px monospace';
+        ctx.fillText('P<INDSHARMA<<RAHUL<<<<<<<<<<<<<<<<<<<<<<<<<<<', 140, 635);
+        ctx.fillText('T1234567<8IND9902145M3001097<<<<<<<<<<<<<<<', 140, 690);
+
+        canvas.toBlob(
+          (blob) => {
+            setIsScanning(false);
+            if (blob) {
+              const file = new File([blob], `scanner_capture_${Date.now()}.jpg`, {
+                type: 'image/jpeg',
+              });
+              onCapture(file);
+            }
+            onClose();
+          },
+          'image/jpeg',
+          0.95
+        );
+      } else {
+        setIsScanning(false);
+        onClose();
+      }
+    }, 850);
   };
 
   return (

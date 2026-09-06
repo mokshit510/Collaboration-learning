@@ -1,5 +1,19 @@
 export type DocumentType = 'passport' | 'visa' | 'other';
 
+export type UploadState = 'IDLE' | 'SELECTED' | 'VALIDATING' | 'READY' | 'ERROR';
+
+export interface UploadedDocument {
+  file: File;
+  previewUrl: string;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  documentType: DocumentType;
+  status: UploadState;
+  errorMessage?: string;
+  uploadedAt: string;
+}
+
 export type PipelineStepId = 
   | 'upload' 
   | 'ocr' 
@@ -92,6 +106,14 @@ export interface DocumentData {
   riskContributors: RiskContributor[];
   aiSummary: string;
   processingTime: string;
+  isUserUploaded?: boolean;
+  rawImagePreviewUrl?: string;
+  uploadedFile?: {
+    name: string;
+    size: number;
+    type: string;
+    lastModified?: number;
+  };
 }
 
 export type InvestigationStatus = 'unflagged' | 'flagged' | 'saved';

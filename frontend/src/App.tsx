@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import type {
   DocumentData,
@@ -8,6 +8,7 @@ import type {
   PipelineStepStatus,
   DemoScenarioId,
   VerificationRecord,
+  UploadedDocument,
 } from './types';
 import { mockPassportData } from './data/mockVerificationData';
 import { VerificationService } from './services/verificationService';
@@ -85,7 +86,24 @@ export function App() {
   const [activeType, setActiveType] = useState<DocumentType>('passport');
   const [selectedScenario, setSelectedScenario] = useState<DemoScenarioId>('tampered');
   const [documentData, setDocumentData] = useState<DocumentData>(mockPassportData);
+  const [uploadedDocument, setUploadedDocument] = useState<UploadedDocument | null>(null);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
+
+  // Safe object URL lifecycle management to avoid memory leaks
+  const activeObjectUrlRef = useRef<string | null>(null);
+
+  const cleanupObjectUrl = useCallback(() => {
+    if (activeObjectUrlRef.current) {
+      URL.revokeObjectURL(activeObjectUrlRef.current);
+      activeObjectUrlRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      cleanupObjectUrl();
+    };
+  }, [cleanupObjectUrl]);
 
   // Pipeline Step & Data-driven states
   const [currentStep, setCurrentStep] = useState<number>(7);
@@ -120,15 +138,27 @@ export function App() {
   // Switch Document Type
   const handleTypeChange = (type: DocumentType) => {
     setActiveType(type);
-    const data = VerificationService.getDocumentData(type);
-    setDocumentData(data);
-    setProcessingTime(data.processingTime);
-    setInvestigationStatus('unflagged');
-    addToast('info', `Switched to ${type.toUpperCase()} Record`, `Loaded ${data.title}`);
+    if (uploadedDocument && uploadedDocument.file) {
+      setUploadedDocument((prev) => (prev ? { ...prev, documentType: type } : null));
+      setDocumentData((prev) => ({
+        ...prev,
+        type,
+        title: `${type.toUpperCase()} — ${uploadedDocument.fileName}`,
+      }));
+      addToast('info', `Classification: ${type.toUpperCase()}`, 'Updated document classification for verification.');
+    } else {
+      const data = VerificationService.getDocumentData(type);
+      setDocumentData(data);
+      setProcessingTime(data.processingTime);
+      setInvestigationStatus('unflagged');
+      addToast('info', `Switched to ${type.toUpperCase()} Record`, `Loaded ${data.title}`);
+    }
   };
 
   // Switch Demo Scenario
   const handleScenarioChange = (scenarioId: DemoScenarioId) => {
+    cleanupObjectUrl();
+    setUploadedDocument(null);
     setSelectedScenario(scenarioId);
     const data = VerificationService.getScenarioData(scenarioId);
     setActiveType(data.type);
@@ -159,9 +189,10 @@ export function App() {
     setStepMessages({});
 
     try {
+      const scenarioToUse = uploadedDocument ? undefined : selectedScenario;
       const result = await VerificationService.runVerification(
         documentData,
-        selectedScenario,
+        scenarioToUse,
         (stepIndex, _stepName, status, details) => {
           setCurrentStep(stepIndex);
           setStepStates((prev) => ({ ...prev, [stepIndex]: status }));
@@ -207,7 +238,8 @@ export function App() {
   // Initial verification state preparation so detailed report modal has content immediately
   useEffect(() => {
     let isMounted = true;
-    VerificationService.runVerification(documentData, selectedScenario).then((res) => {
+    const scenarioToUse = uploadedDocument ? undefined : selectedScenario;
+    VerificationService.runVerification(documentData, scenarioToUse).then((res) => {
       if (isMounted) {
         setVerificationResult(res);
       }
@@ -215,28 +247,90 @@ export function App() {
     return () => {
       isMounted = false;
     };
-  }, [selectedScenario, documentData]);
+  }, [selectedScenario, documentData, uploadedDocument]);
 
   // Upload / Replace Image Handler
-  const handleImageReplace = async (file: File) => {
-    try {
-      const uploadRes = await VerificationService.uploadDocument(file);
-      setDocumentData((prev) => ({
-        ...prev,
-        photoUrl: uploadRes.url,
-      }));
-      addToast('success', 'New Document Uploaded', file.name);
-      handleStartSimulation();
-    } catch (err) {
-      console.error('[Upload] Failed:', err);
-      addToast('error', 'Upload Failed', 'Could not process document image.');
-    }
-  };
+  const handleFileUpload = useCallback(
+    (file: File) => {
+      // 1. Clean up prior object URL to prevent memory leaks
+      cleanupObjectUrl();
 
-  // Camera Scan Capture
-  const handleCameraCapture = () => {
-    addToast('success', 'Camera Scan Captured', 'Optical scan acquired at 300 DPI');
-    handleStartSimulation();
+      // 2. Generate browser object URL for preview
+      const previewUrl = URL.createObjectURL(file);
+      activeObjectUrlRef.current = previewUrl;
+
+      // 3. Create UploadedDocument state
+      const newDocRecord: UploadedDocument = {
+        file,
+        previewUrl,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type || 'image/jpeg',
+        documentType: activeType,
+        status: 'READY',
+        uploadedAt: new Date().toISOString(),
+      };
+      setUploadedDocument(newDocRecord);
+
+      // 4. Construct real document input for VerificationService
+      const documentInput = VerificationService.createDocumentInputFromUpload(
+        file,
+        previewUrl,
+        activeType,
+        VerificationService.getDocumentData(activeType)
+      );
+      setDocumentData(documentInput);
+      setInvestigationStatus('unflagged');
+
+      // 5. Reset pipeline to READY status
+      setCurrentStep(1);
+      setStepStates({
+        1: 'COMPLETED',
+        2: 'NOT_STARTED',
+        3: 'NOT_STARTED',
+        4: 'NOT_STARTED',
+        5: 'NOT_STARTED',
+        6: 'NOT_STARTED',
+        7: 'NOT_STARTED',
+        8: 'NOT_STARTED',
+      });
+      setStepMessages({ 1: `Ingested ${file.name} (${(file.size / 1024).toFixed(1)} KB)` });
+
+      addToast(
+        'success',
+        'Document Ready for Verification',
+        `${file.name} loaded. Click 'Run Pipeline' to verify.`
+      );
+    },
+    [activeType, cleanupObjectUrl, addToast]
+  );
+
+  // Remove / Reset Uploaded Document
+  const handleResetDocument = useCallback(() => {
+    cleanupObjectUrl();
+    setUploadedDocument(null);
+    const baseline = VerificationService.getDocumentData(activeType);
+    setDocumentData(baseline);
+    setInvestigationStatus('unflagged');
+    setCurrentStep(1);
+    setStepStates({
+      1: 'NOT_STARTED',
+      2: 'NOT_STARTED',
+      3: 'NOT_STARTED',
+      4: 'NOT_STARTED',
+      5: 'NOT_STARTED',
+      6: 'NOT_STARTED',
+      7: 'NOT_STARTED',
+      8: 'NOT_STARTED',
+    });
+    setStepMessages({});
+    addToast('info', 'Document Removed', `Restored default ${activeType.toUpperCase()} template.`);
+  }, [activeType, cleanupObjectUrl, addToast]);
+
+  // Camera Scan Capture (unified with File Upload)
+  const handleCameraCapture = (file: File) => {
+    addToast('info', 'Optical Scan Acquired', `Ingesting optical scan: ${file.name}`);
+    handleFileUpload(file);
   };
 
   // Action: Save to Records
@@ -277,6 +371,10 @@ export function App() {
 
   // Action: Clear / Reset
   const handleClear = () => {
+    cleanupObjectUrl();
+    setUploadedDocument(null);
+    const baseline = VerificationService.getDocumentData(activeType);
+    setDocumentData(baseline);
     setInvestigationStatus('unflagged');
     setCurrentStep(1);
     setStepStates({
@@ -289,6 +387,7 @@ export function App() {
       7: 'NOT_STARTED',
       8: 'NOT_STARTED',
     });
+    setStepMessages({});
     setProcessingTime('0.0 seconds');
     addToast('info', 'Console Reset', 'Ready for next document screening.');
   };
@@ -353,10 +452,14 @@ export function App() {
               <DocumentUploadCard
                 data={documentData}
                 activeType={activeType}
+                uploadedDocument={uploadedDocument}
                 selectedScenario={selectedScenario}
                 onScenarioChange={handleScenarioChange}
                 onTypeChange={handleTypeChange}
-                onImageReplace={handleImageReplace}
+                onImageReplace={handleFileUpload}
+                onResetDocument={handleResetDocument}
+                onStartVerification={handleStartSimulation}
+                isSimulating={isSimulating}
                 onScanWithCamera={() => setIsCameraModalOpen(true)}
               />
             </div>

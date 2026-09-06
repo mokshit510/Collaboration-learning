@@ -115,6 +115,32 @@ export class VerificationService {
   }
 
   /**
+   * Helper to construct DocumentData input from an uploaded file and object URL
+   */
+  public static createDocumentInputFromUpload(
+    file: File,
+    previewUrl: string,
+    type: DocumentType = 'passport',
+    baselineData?: DocumentData
+  ): DocumentData {
+    const base = baselineData || this.getDocumentData(type);
+    return {
+      ...base,
+      type,
+      title: `${type.toUpperCase()} — ${file.name}`,
+      isUserUploaded: true,
+      rawImagePreviewUrl: previewUrl,
+      uploadedFile: {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        lastModified: file.lastModified,
+      },
+      photoUrl: previewUrl,
+    };
+  }
+
+  /**
    * 2. OCR Extraction
    */
   public static async runOCR(
@@ -258,8 +284,16 @@ export class VerificationService {
     let t0 = performance.now();
     onStepProgress?.(1, 'Document Upload', 'PROCESSING', 'Ingesting document image & optical profile');
     await delay(300);
-    recordAudit(1, 'Document Upload', 'COMPLETED', 'Document frame ingested at 300 DPI optical fidelity.', performance.now() - t0);
-    onStepProgress?.(1, 'Document Upload', 'COMPLETED', 'Optical ingestion complete');
+    const uploadAuditDetail = doc.uploadedFile
+      ? `Ingested uploaded document: ${doc.uploadedFile.name} (${(doc.uploadedFile.size / 1024).toFixed(1)} KB) at 300 DPI optical fidelity.`
+      : 'Document frame ingested at 300 DPI optical fidelity.';
+    recordAudit(1, 'Document Upload', 'COMPLETED', uploadAuditDetail, performance.now() - t0);
+    onStepProgress?.(
+      1,
+      'Document Upload',
+      'COMPLETED',
+      doc.uploadedFile ? `Ingested ${doc.uploadedFile.name}` : 'Optical ingestion complete'
+    );
 
     // ----------------------------------------------------
     // STEP 2: OCR Extraction
@@ -269,11 +303,14 @@ export class VerificationService {
     const ocrConfidenceMod = isLowOcrScenario ? 0.72 : 1.0;
     const ocrResult = await this.runOCR(doc, doc.type, ocrConfidenceMod);
     const ocrStatus: PipelineStepStatus = ocrResult.qualityStatus === 'LOW' ? 'WARNING' : 'COMPLETED';
+    const ocrAuditDetail = doc.isUserUploaded
+      ? `Extracted ${ocrResult.fields.length} text fields via client-side optical adapter (${ocrResult.averageConfidence}% avg confidence).`
+      : `Extracted ${ocrResult.fields.length} text fields (${ocrResult.averageConfidence}% avg confidence).`;
     recordAudit(
       2,
       'OCR Extraction',
       ocrStatus === 'WARNING' ? 'WARNING' : 'COMPLETED',
-      `Extracted ${ocrResult.fields.length} text fields (${ocrResult.averageConfidence}% avg confidence).`,
+      ocrAuditDetail,
       performance.now() - t0
     );
     onStepProgress?.(2, 'OCR Extraction', ocrStatus, `${ocrResult.averageConfidence}% confidence`);

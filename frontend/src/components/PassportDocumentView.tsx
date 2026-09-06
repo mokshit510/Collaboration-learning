@@ -12,6 +12,57 @@ export const PassportDocumentView: React.FC<PassportDocumentViewProps> = ({
   showTamperOverlay = false,
   compact = false,
 }) => {
+  // If an authentic document was uploaded, render the actual uploaded image
+  if (data.rawImagePreviewUrl) {
+    return (
+      <div
+        className={`relative w-full overflow-hidden rounded-md border border-slate-400/80 bg-slate-950 shadow-inner select-none flex items-center justify-center group ${
+          compact ? 'text-[9px]' : 'text-[11px]'
+        }`}
+        style={{ aspectRatio: '1.42 / 1' }}
+      >
+        {/* Actual Uploaded Document Image */}
+        <img
+          src={data.rawImagePreviewUrl}
+          alt={data.uploadedFile?.name || 'Uploaded Document'}
+          className="w-full h-full object-contain bg-slate-900/90"
+        />
+
+        {/* Optical Alignment Reticle Corner Guides */}
+        <div className="absolute inset-2 pointer-events-none border border-cyan-500/20">
+          <div className="absolute -top-0.5 -left-0.5 w-3 h-3 border-t-2 border-l-2 border-cyan-400" />
+          <div className="absolute -top-0.5 -right-0.5 w-3 h-3 border-t-2 border-r-2 border-cyan-400" />
+          <div className="absolute -bottom-0.5 -left-0.5 w-3 h-3 border-b-2 border-l-2 border-cyan-400" />
+          <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 border-b-2 border-r-2 border-cyan-400" />
+        </div>
+
+        {/* Forensic Inspection Overlays if enabled */}
+        {showTamperOverlay && (
+          <div className="absolute inset-0 pointer-events-none">
+            {/* Portrait VIZ overlay */}
+            <div className="absolute top-[14%] left-[6%] w-[30%] h-[60%] border-2 border-emerald-400 bg-emerald-400/10 rounded flex items-start p-1">
+              <span className="bg-emerald-600 text-white text-[7px] font-sans font-bold px-1 rounded shadow-xs">
+                BIOMETRIC VIZ
+              </span>
+            </div>
+            {/* MRZ Band overlay */}
+            <div className="absolute bottom-[6%] inset-x-[6%] h-[18%] border-2 border-blue-400 bg-blue-400/10 rounded flex items-start p-1">
+              <span className="bg-blue-600 text-white text-[7px] font-sans font-bold px-1 rounded shadow-xs">
+                ICAO 9303 MRZ STREAM
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Optical Stream Tag */}
+        <div className="absolute bottom-1.5 right-2 bg-slate-900/85 text-[8px] font-mono text-cyan-300 px-1.5 py-0.5 rounded border border-cyan-500/30 backdrop-blur-xs flex items-center gap-1 pointer-events-none shadow-2xs">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span>OPTICAL FRAME: 300 DPI</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`relative w-full overflow-hidden rounded-md border border-slate-300/80 bg-[#e8edf2] shadow-inner select-none font-mono ${
