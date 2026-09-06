@@ -146,7 +146,7 @@ export class ApiClient {
     formData.append('document', file);
     formData.append('documentType', documentType);
 
-    return this.request<{ success: boolean; data: { id: string; url?: string; [key: string]: unknown } }>(
+    return this.request<{ success: boolean; data: { id: string; url?: string;[key: string]: unknown } }>(
       '/documents/upload',
       {
         method: 'POST',
@@ -188,11 +188,22 @@ export class ApiClient {
     });
   }
 
-  public async runOcr(payload: { image: string; documentType: DocumentType }): Promise<OcrResult> {
-    return this.request<OcrResult>('/api/v1/ocr', {
+  public async runOcr(file: File, documentType: DocumentType = 'passport'): Promise<OcrResult> {
+    const formData = new FormData();
+
+    formData.append('document', file);
+    formData.append('documentType', documentType);
+
+    const response = await this.request<{
+      success: boolean;
+      data: OcrResult;
+      timestamp?: string;
+    }>('/v1/ocr', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: formData,
     });
+
+    return response.data;
   }
 
   public async analyzeTampering(payload: {

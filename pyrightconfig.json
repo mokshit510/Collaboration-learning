@@ -1,0 +1,10 @@
+{
+  "include": [
+    "ai-services/ocr"
+  ],
+  "venvPath": "ai-services/ocr",
+  "venv": ".venv",
+  "extraPaths": [
+    "ai-services/ocr"
+  ]
+}

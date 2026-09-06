@@ -33,6 +33,7 @@ import { AuthorityDashboard } from './pages/AuthorityDashboard';
 export function App() {
   // Navigation & Role/Portal Mode
   const [activeNav, setActiveNav] = useState('dashboard');
+  const [showNewVerification, setShowNewVerification] = useState(false);
   const [currentPortal, setCurrentPortal] = useState<'authority' | 'investigator'>(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.toLowerCase();
@@ -195,11 +196,19 @@ export function App() {
         scenarioToUse,
         (stepIndex, _stepName, status, details) => {
           setCurrentStep(stepIndex);
-          setStepStates((prev) => ({ ...prev, [stepIndex]: status }));
+          setStepStates((prev) => ({
+            ...prev,
+            [stepIndex]: status
+          }));
+
           if (details) {
-            setStepMessages((prev) => ({ ...prev, [stepIndex]: details }));
+            setStepMessages((prev) => ({
+              ...prev,
+              [stepIndex]: details
+            }));
           }
-        }
+        },
+        uploadedDocument?.file
       );
 
       setVerificationResult(result);
@@ -237,13 +246,21 @@ export function App() {
 
   // Initial verification state preparation so detailed report modal has content immediately
   useEffect(() => {
+    if (uploadedDocument) {
+      return;
+    }
+
     let isMounted = true;
-    const scenarioToUse = uploadedDocument ? undefined : selectedScenario;
-    VerificationService.runVerification(documentData, scenarioToUse).then((res) => {
+
+    VerificationService.runVerification(
+      documentData,
+      selectedScenario
+    ).then((res) => {
       if (isMounted) {
         setVerificationResult(res);
       }
     });
+
     return () => {
       isMounted = false;
     };
@@ -301,6 +318,9 @@ export function App() {
         'Document Ready for Verification',
         `${file.name} loaded. Click 'Run Pipeline' to verify.`
       );
+
+      setShowNewVerification(false);
+      setActiveNav('dashboard');
     },
     [activeType, cleanupObjectUrl, addToast]
   );
@@ -372,6 +392,7 @@ export function App() {
   // Action: Clear / Reset
   const handleClear = () => {
     cleanupObjectUrl();
+    setVerificationResult(null);
     setUploadedDocument(null);
     const baseline = VerificationService.getDocumentData(activeType);
     setDocumentData(baseline);
@@ -416,89 +437,220 @@ export function App() {
 
   return (
     <div className="flex min-h-screen bg-[#F5F7FA] text-[#14213D] font-sans antialiased">
-      {/* 1. Dark Navy Sidebar (Left) */}
+
       <Sidebar
         activeNav={activeNav}
         setActiveNav={handleNavClick}
         onNewVerification={() => {
           handleClear();
-          setActiveNav('dashboard');
+          setShowNewVerification(true);
+          setActiveNav('new_verification');
         }}
         onSwitchToAuthority={() => handleSwitchPortal('authority')}
       />
 
-      {/* 2. Main Workspace Layout (Right) */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        {/* Top Header */}
+
         <Header investigationStatus={investigationStatus} />
 
-        {/* Scrollable Workspace */}
-        <main className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          {/* Top Verification Pipeline Card */}
-          <PipelineProgress
-            currentStep={currentStep}
-            stepStates={stepStates}
-            stepMessages={stepMessages}
-            processingTime={processingTime}
-            isSimulating={isSimulating}
-            onStartSimulation={handleStartSimulation}
-            onStepClick={(step) => setCurrentStep(step)}
-          />
+        {showNewVerification ? (
+          /* =====================================================
+             NEW VERIFICATION — UPLOAD SCREEN
+             ===================================================== */
+          <main className="flex-1 overflow-y-auto px-5 py-6">
 
-          {/* Main 3-Column Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-            {/* COLUMN 1: Document Upload / Viewer (4 cols) */}
-            <div className="lg:col-span-4 h-full flex flex-col">
-              <DocumentUploadCard
-                data={documentData}
-                activeType={activeType}
-                uploadedDocument={uploadedDocument}
-                selectedScenario={selectedScenario}
-                onScenarioChange={handleScenarioChange}
-                onTypeChange={handleTypeChange}
-                onImageReplace={handleFileUpload}
-                onResetDocument={handleResetDocument}
-                onStartVerification={handleStartSimulation}
-                isSimulating={isSimulating}
-                onScanWithCamera={() => setIsCameraModalOpen(true)}
-              />
+            <div className="max-w-4xl mx-auto">
+
+              <div className="mb-6">
+                <p className="text-xs font-bold uppercase tracking-wider text-[#1677E8]">
+                  PRAMAAN / New Verification
+                </p>
+
+                <h1 className="text-2xl font-bold text-slate-900 mt-1">
+                  Start New Verification
+                </h1>
+
+                <p className="text-sm text-slate-500 mt-1">
+                  Upload a document image to prepare it for AI-powered screening.
+                </p>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+
+                <div className="mb-5">
+                  <h2 className="text-sm font-bold text-slate-800">
+                    Upload Identity / Travel Document
+                  </h2>
+
+                  <p className="text-xs text-slate-500 mt-1">
+                    Supported formats: JPG, PNG and WEBP. Maximum file size: 10MB.
+                  </p>
+                </div>
+
+                <DocumentUploadCard
+                  data={documentData}
+                  activeType={activeType}
+                  uploadedDocument={null}
+                  selectedScenario={selectedScenario}
+                  onScenarioChange={undefined}
+                  onTypeChange={handleTypeChange}
+                  onImageReplace={handleFileUpload}
+                  onResetDocument={handleResetDocument}
+                  onStartVerification={undefined}
+                  isSimulating={false}
+                  onScanWithCamera={() => setIsCameraModalOpen(true)}
+                />
+
+                <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
+
+                  <div className="rounded-xl bg-blue-50 border border-blue-100 p-4">
+                    <div className="text-xs font-bold text-blue-800">
+                      STEP 1
+                    </div>
+                    <div className="text-sm font-semibold text-slate-800 mt-1">
+                      Upload
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Select a clear document image.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+                    <div className="text-xs font-bold text-slate-600">
+                      STEP 2
+                    </div>
+                    <div className="text-sm font-semibold text-slate-800 mt-1">
+                      Review
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Review the uploaded document on the dashboard.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+                    <div className="text-xs font-bold text-slate-600">
+                      STEP 3
+                    </div>
+                    <div className="text-sm font-semibold text-slate-800 mt-1">
+                      Run Pipeline
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Manually start OCR and AI verification.
+                    </p>
+                  </div>
+
+                </div>
+
+                <div className="mt-5 p-4 rounded-xl bg-amber-50 border border-amber-200">
+                  <div className="flex items-start gap-3">
+                    <div className="text-amber-600 text-lg">
+                      ⓘ
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold text-amber-800">
+                        AI processing does not start during upload
+                      </p>
+
+                      <p className="text-xs text-amber-700 mt-1">
+                        Uploading only prepares the document. OCR, validation,
+                        tampering analysis, face verification and risk assessment
+                        start only after you manually click
+                        <strong> Run Pipeline</strong> on the dashboard.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
             </div>
 
-            {/* COLUMN 2: OCR, Validation, Issuer (4 cols) */}
-            <div className="lg:col-span-4 space-y-4">
-              <OcrExtractionCard fields={documentData.ocrFields} />
-              <DocumentValidationCard items={documentData.validationItems} />
-              <IssuerVerificationCard items={documentData.issuerItems} />
-            </div>
+          </main>
 
-            {/* COLUMN 3: Tampering Analysis, Face Verification, Risk Assessment (4 cols) */}
-            <div className="lg:col-span-4 space-y-4">
-              <TamperingAnalysisCard
-                data={documentData}
-                onInspectElement={() => setIsReportModalOpen(true)}
-              />
-              <FaceVerificationCard data={documentData} />
-              <RiskAssessmentCard
-                data={documentData}
-                onOpenReport={() => setIsReportModalOpen(true)}
-              />
-            </div>
-          </div>
+        ) : (
 
-          {/* BOTTOM ROW: AI Summary + Action Buttons */}
-          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 pt-1 pb-2">
-            <AiSummaryCard summary={documentData.aiSummary} />
-            <ActionButtons
-              investigationStatus={investigationStatus}
-              onSaveToRecords={handleSaveToRecords}
-              onFlagForInvestigation={handleFlagForInvestigation}
-              onClear={handleClear}
+          /* =====================================================
+             EXISTING DASHBOARD
+             ===================================================== */
+          <main className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+
+            <PipelineProgress
+              currentStep={currentStep}
+              stepStates={stepStates}
+              stepMessages={stepMessages}
+              processingTime={processingTime}
+              isSimulating={isSimulating}
+              onStartSimulation={handleStartSimulation}
+              onStepClick={(step) => setCurrentStep(step)}
             />
-          </div>
-        </main>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+
+              <div className="lg:col-span-4 h-full flex flex-col">
+
+                <DocumentUploadCard
+                  data={documentData}
+                  activeType={activeType}
+                  uploadedDocument={uploadedDocument}
+                  selectedScenario={selectedScenario}
+                  onScenarioChange={undefined}
+                  onTypeChange={handleTypeChange}
+                  onImageReplace={handleFileUpload}
+                  onResetDocument={handleResetDocument}
+                  onStartVerification={handleStartSimulation}
+                  isSimulating={isSimulating}
+                  onScanWithCamera={() => setIsCameraModalOpen(true)}
+                />
+
+              </div>
+
+              <div className="lg:col-span-4 space-y-4">
+
+                <OcrExtractionCard fields={documentData.ocrFields} />
+
+                <DocumentValidationCard items={documentData.validationItems} />
+
+                <IssuerVerificationCard items={documentData.issuerItems} />
+
+              </div>
+
+              <div className="lg:col-span-4 space-y-4">
+
+                <TamperingAnalysisCard
+                  data={documentData}
+                  onInspectElement={() => setIsReportModalOpen(true)}
+                />
+
+                <FaceVerificationCard data={documentData} />
+
+                <RiskAssessmentCard
+                  data={documentData}
+                  onOpenReport={() => setIsReportModalOpen(true)}
+                />
+
+              </div>
+
+            </div>
+
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 pt-1 pb-2">
+
+              <AiSummaryCard summary={documentData.aiSummary} />
+
+              <ActionButtons
+                investigationStatus={investigationStatus}
+                onSaveToRecords={handleSaveToRecords}
+                onFlagForInvestigation={handleFlagForInvestigation}
+                onClear={handleClear}
+              />
+
+            </div>
+
+          </main>
+        )}
+
       </div>
 
-      {/* Modals & Overlays */}
       <DetailedReportModal
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
@@ -518,7 +670,11 @@ export function App() {
         onSelectRecord={handleSelectPastRecord}
       />
 
-      <ToastContainer toasts={toasts} onDismiss={removeToast} />
+      <ToastContainer
+        toasts={toasts}
+        onDismiss={removeToast}
+      />
+
     </div>
   );
 }

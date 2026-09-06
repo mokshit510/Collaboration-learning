@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -5,6 +6,7 @@ import config from './config/env.js';
 import { standardLimiter } from './middleware/rateLimitMiddleware.js';
 import { notFoundHandler, errorHandler } from './middleware/errorMiddleware.js';
 import healthRoutes from './routes/healthRoutes.js';
+import ocrRoutes from './routes/ocrRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import documentRoutes from './routes/documentRoutes.js';
 
@@ -61,6 +63,7 @@ app.get('/', (req, res) => {
 
 // Mount Routes
 app.use('/api/health', healthRoutes);
+app.use('/api/v1/ocr', ocrRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentRoutes);
 

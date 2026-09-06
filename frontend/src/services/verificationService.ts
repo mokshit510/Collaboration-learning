@@ -146,10 +146,27 @@ export class VerificationService {
   public static async runOCR(
     doc: DocumentData,
     type: DocumentType,
-    confidenceModifier: number = 1.0
+    confidenceModifier: number = 1.0,
+    uploadedFile?: File
   ): Promise<OcrResult> {
+    if (doc.isUserUploaded && uploadedFile) {
+      try {
+        console.log('[OCR] Running real backend OCR...');
+
+        return await apiClient.runOcr(uploadedFile, type);
+      } catch (error) {
+        console.error('[OCR] Backend OCR failed:', error);
+        throw error;
+      }
+    }
+
     await delay(400);
-    return OcrEngine.extractFields(doc, type, confidenceModifier);
+
+    return OcrEngine.extractFields(
+      doc,
+      type,
+      confidenceModifier
+    );
   }
 
   /**
@@ -245,7 +262,8 @@ export class VerificationService {
   public static async runVerification(
     doc: DocumentData,
     scenarioId?: DemoScenarioId,
-    onStepProgress?: PipelineProgressCallback
+    onStepProgress?: PipelineProgressCallback,
+    uploadedFile?: File
   ): Promise<VerificationResult> {
     const startTime = performance.now();
     const verificationId = `PRM-2026-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -301,10 +319,15 @@ export class VerificationService {
     t0 = performance.now();
     onStepProgress?.(2, 'OCR Extraction', 'PROCESSING', 'Segmenting Visual Inspection Zone & MRZ stream');
     const ocrConfidenceMod = isLowOcrScenario ? 0.72 : 1.0;
-    const ocrResult = await this.runOCR(doc, doc.type, ocrConfidenceMod);
+    const ocrResult = await this.runOCR(
+      doc,
+      doc.type,
+      ocrConfidenceMod,
+      uploadedFile
+    );
     const ocrStatus: PipelineStepStatus = ocrResult.qualityStatus === 'LOW' ? 'WARNING' : 'COMPLETED';
     const ocrAuditDetail = doc.isUserUploaded
-      ? `Extracted ${ocrResult.fields.length} text fields via client-side optical adapter (${ocrResult.averageConfidence}% avg confidence).`
+      ? `Extracted ${ocrResult.fields.length} text fields using the backend OCR service (${ocrResult.averageConfidence}% reported confidence).`
       : `Extracted ${ocrResult.fields.length} text fields (${ocrResult.averageConfidence}% avg confidence).`;
     recordAudit(
       2,
@@ -320,7 +343,29 @@ export class VerificationService {
     // ----------------------------------------------------
     t0 = performance.now();
     onStepProgress?.(3, 'Validation', 'PROCESSING', 'Executing ICAO 9303 checksums & chronological validation');
-    const validationResult = await this.validateDocument(doc, {
+    // For uploaded documents, validation must use the data actually
+    // extracted by OCR instead of the original demo/baseline document.
+    const documentForValidation: DocumentData = doc.isUserUploaded
+      ? {
+        ...doc,
+        documentNumber:
+          ocrResult.fields.find((f) => f.label === 'Passport Number')?.value ?? '',
+        holderName:
+          ocrResult.fields.find((f) => f.label === 'Full Name')?.value ?? '',
+        nationality:
+          ocrResult.fields.find((f) => f.label === 'Nationality')?.value ?? '',
+        dob:
+          ocrResult.fields.find((f) => f.label === 'Date of Birth')?.value ?? '',
+        expiryDate:
+          ocrResult.fields.find((f) => f.label === 'Date of Expiry')?.value ?? '',
+        gender:
+          ocrResult.fields.find((f) => f.label === 'Gender')?.value ?? '',
+        mrzLine1: '',
+        mrzLine2: '',
+      }
+      : doc;
+
+    const validationResult = await this.validateDocument(documentForValidation, {
       forceExpired: isExpiredScenario,
       forceMismatchedMrz: isTamperedScenario,
     });
@@ -328,8 +373,8 @@ export class VerificationService {
       validationResult.overallStatus === 'FAIL'
         ? 'FAILED'
         : validationResult.overallStatus === 'WARNING'
-        ? 'WARNING'
-        : 'COMPLETED';
+          ? 'WARNING'
+          : 'COMPLETED';
     recordAudit(
       3,
       'Validation',
@@ -373,8 +418,8 @@ export class VerificationService {
       tamperingResult.tamperingScore >= 60
         ? 'FAILED'
         : tamperingResult.tamperingScore >= 30
-        ? 'WARNING'
-        : 'COMPLETED';
+          ? 'WARNING'
+          : 'COMPLETED';
     recordAudit(
       5,
       'Tampering Analysis',
