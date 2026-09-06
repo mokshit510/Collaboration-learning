@@ -1,5 +1,6 @@
 import type { DocumentData, DocumentType } from '../types';
 import { mockPassportData, mockVisaData, mockOtherDocData } from '../data/mockVerificationData';
+import apiClient from './apiClient';
 
 // Simulated delay helper
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -22,14 +23,29 @@ export class VerificationService {
   }
 
   /**
-   * Simulated document upload endpoint
+   * Document upload endpoint with backend REST API sync
    */
-  static async uploadDocument(file: File): Promise<{ url: string; filename: string }> {
-    await delay(600);
+  static async uploadDocument(
+    file: File,
+    type: DocumentType = 'passport'
+  ): Promise<{ url: string; filename: string; documentId?: string }> {
     const objectUrl = URL.createObjectURL(file);
+    let documentId: string | undefined;
+
+    try {
+      // Sync document with backend REST API
+      const apiRes = await apiClient.uploadDocument(file, type);
+      if (apiRes.success && apiRes.data?.id) {
+        documentId = apiRes.data.id;
+      }
+    } catch (err) {
+      console.info('[VerificationService] Backend offline or fallback mode:', err);
+    }
+
     return {
       url: objectUrl,
       filename: file.name,
+      documentId,
     };
   }
 
