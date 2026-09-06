@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
 import type {
   DocumentData,
@@ -22,11 +22,40 @@ import { ActionButtons } from './components/ActionButtons';
 import { DetailedReportModal } from './components/DetailedReportModal';
 import { CameraScanModal } from './components/CameraScanModal';
 import { ToastContainer, type ToastMessage } from './components/Toast';
+import { AuthorityDashboard } from './pages/AuthorityDashboard';
 
 
 export function App() {
-  // Navigation
+  // Navigation & Role/Portal Mode
   const [activeNav, setActiveNav] = useState('dashboard');
+  const [currentPortal, setCurrentPortal] = useState<'authority' | 'investigator'>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.toLowerCase();
+      if (hash.includes('investigator')) return 'investigator';
+      if (hash.includes('authority')) return 'authority';
+    }
+    return 'authority';
+  });
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.toLowerCase();
+      if (hash.includes('investigator')) setCurrentPortal('investigator');
+      else if (hash.includes('authority')) setCurrentPortal('authority');
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const handleSwitchPortal = (portal: 'authority' | 'investigator') => {
+    setCurrentPortal(portal);
+    window.location.hash = portal;
+    addToast(
+      'info',
+      `Switched to ${portal === 'authority' ? 'Authority Portal' : 'Investigator Console'}`,
+      'Active session view updated.'
+    );
+  };
 
   // Document & Verification State
   const [activeType, setActiveType] = useState<DocumentType>('passport');
@@ -150,6 +179,18 @@ export function App() {
     addToast('info', 'Console Reset', 'Ready for next document screening.');
   };
 
+  if (currentPortal === 'authority') {
+    return (
+      <>
+        <AuthorityDashboard
+          onSwitchToInvestigator={() => handleSwitchPortal('investigator')}
+          onShowToast={(title, desc) => addToast('info', title, desc)}
+        />
+        <ToastContainer toasts={toasts} onDismiss={removeToast} />
+      </>
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-[#F5F7FA] text-[#14213D] font-sans antialiased">
       {/* 1. Dark Navy Sidebar (Left) */}
@@ -160,6 +201,7 @@ export function App() {
           handleClear();
           setActiveNav('dashboard');
         }}
+        onSwitchToAuthority={() => handleSwitchPortal('authority')}
       />
 
       {/* 2. Main Workspace Layout (Right) */}

@@ -13,12 +13,14 @@ interface SidebarProps {
   activeNav: string;
   setActiveNav: (nav: string) => void;
   onNewVerification?: () => void;
+  onSwitchToAuthority?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeNav,
   setActiveNav,
   onNewVerification,
+  onSwitchToAuthority,
 }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
@@ -83,6 +85,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Bottom Area with Border Patrol Background Image & Motto */}
       <div className="relative overflow-hidden mt-auto">
+        {/* Quick Switch to Authority Portal */}
+        {onSwitchToAuthority && (
+          <div className="px-3 pb-2 relative z-20">
+            <button
+              onClick={onSwitchToAuthority}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-[#0E2C4F] hover:bg-[#143B66] text-xs font-semibold text-cyan-300 border border-cyan-500/30 transition-colors shadow-sm cursor-pointer"
+              title="Open the Authority / Administrator Portal"
+            >
+              <span>Switch to Authority Portal →</span>
+            </button>
+          </div>
+        )}
+
         {/* Background Image Container with Gradient Fade */}
         <div className="relative w-full h-56">
           <img
