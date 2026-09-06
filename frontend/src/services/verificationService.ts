@@ -1,4 +1,3 @@
-<<<<<<< HEAD:frontend/src/services/verificationService.ts
 /**
  * PRAMAAN Verification Service
  * Central abstraction layer coordinating all document verification vectors.
@@ -55,11 +54,7 @@ import { WatchlistService } from './watchlistService';
 import { EvidenceFusion } from './evidenceFusion';
 import { RiskEngine } from './riskEngine';
 import { RecordsStorage } from './recordsStorage';
-=======
-import type { DocumentData, DocumentType } from '../types';
-import { mockPassportData, mockVisaData, mockOtherDocData } from '../data/mockVerificationData';
 import apiClient from './apiClient';
->>>>>>> 56a0b070a9acc63467a734b8076d86b71a25101f:UI/src/services/verificationService.ts
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -85,7 +80,6 @@ export class VerificationService {
   }
 
   /**
-<<<<<<< HEAD:frontend/src/services/verificationService.ts
    * Get document data for a specific demo scenario
    */
   public static getScenarioData(scenarioId: DemoScenarioId): DocumentData {
@@ -95,21 +89,16 @@ export class VerificationService {
   /**
    * 1. Document Upload
    */
-  public static async uploadDocument(file: File): Promise<{ url: string; filename: string }> {
-    await delay(350);
-=======
-   * Document upload endpoint with backend REST API sync
-   */
-  static async uploadDocument(
+  public static async uploadDocument(
     file: File,
     type: DocumentType = 'passport'
   ): Promise<{ url: string; filename: string; documentId?: string }> {
->>>>>>> 56a0b070a9acc63467a734b8076d86b71a25101f:UI/src/services/verificationService.ts
+    await delay(350);
     const objectUrl = URL.createObjectURL(file);
     let documentId: string | undefined;
 
     try {
-      // Sync document with backend REST API
+      // Sync document with backend REST API if available
       const apiRes = await apiClient.uploadDocument(file, type);
       if (apiRes.success && apiRes.data?.id) {
         documentId = apiRes.data.id;
