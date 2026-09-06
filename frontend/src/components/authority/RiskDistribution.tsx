@@ -11,12 +11,13 @@ export const RiskDistribution: React.FC<RiskDistributionProps> = ({ data }) => {
   const strokeWidth = 14;
   const circumference = 2 * Math.PI * radius; // ~282.74
 
-  // Compute stroke offsets
-  let accumulatedPercent = 0;
-  const segmentsWithOffset = data.segments.map((seg) => {
+  // Compute stroke offsets without mutating outer variables during map
+  const segmentsWithOffset = data.segments.map((seg, index) => {
+    const priorPercentage = data.segments
+      .slice(0, index)
+      .reduce((sum, s) => sum + s.percentage, 0);
     const strokeDasharray = `${(seg.percentage / 100) * circumference} ${circumference}`;
-    const strokeDashoffset = -((accumulatedPercent / 100) * circumference);
-    accumulatedPercent += seg.percentage;
+    const strokeDashoffset = -((priorPercentage / 100) * circumference);
     return {
       ...seg,
       strokeDasharray,

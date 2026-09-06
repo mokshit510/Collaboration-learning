@@ -23,6 +23,8 @@ import { ActiveInvestigators } from '../components/authority/ActiveInvestigators
 import { SystemActivity } from '../components/authority/SystemActivity';
 import { QuickActions } from '../components/authority/QuickActions';
 
+import { RecordsStorage } from '../services/recordsStorage';
+
 interface AuthorityDashboardProps {
   onSwitchToInvestigator?: () => void;
   onShowToast?: (title: string, desc?: string) => void;
@@ -33,6 +35,33 @@ export const AuthorityDashboard: React.FC<AuthorityDashboardProps> = ({
   onShowToast,
 }) => {
   const [activeNav, setActiveNav] = useState<AuthorityNavId>('overview');
+
+  const savedRecords = RecordsStorage.getRecords();
+  const dynamicHighRiskCases = [
+    ...savedRecords
+      .filter((r) => r.riskLevel === 'HIGH' || r.status === 'FLAGGED')
+      .map((r) => ({
+        id: `#${r.verificationId.replace('PRM-2026-', 'PR-')}`,
+        name: r.holderName,
+        documentType: (r.documentType.charAt(0).toUpperCase() + r.documentType.slice(1)) as 'Passport' | 'Visa' | 'Other',
+        riskScore: r.riskScore,
+        reason: r.keyFindings[0] || 'Forensic Inconsistencies',
+        status: r.status === 'FLAGGED' ? ('Flagged' as const) : ('Under Review' as const),
+        timestamp: 'Recent',
+        checkpoint: r.location,
+        investigator: r.investigator,
+      })),
+    ...recentHighRiskCases,
+  ].slice(0, 5);
+
+  const dynamicStats = {
+    ...authorityStats,
+    totalVerifications: {
+      ...authorityStats.totalVerifications,
+      value: authorityStats.totalVerifications.value + Math.max(0, savedRecords.length - 5),
+      formatted: (authorityStats.totalVerifications.value + Math.max(0, savedRecords.length - 5)).toLocaleString(),
+    },
+  };
 
   const handleTriggerToast = (msg: string) => {
     onShowToast?.('Authority Action Completed', msg);
@@ -94,7 +123,7 @@ export const AuthorityDashboard: React.FC<AuthorityDashboardProps> = ({
           )}
 
           {/* ROW 1: Statistics Row (4 Cards) */}
-          <OverviewStats stats={authorityStats} />
+          <OverviewStats stats={dynamicStats} />
 
           {/* ROW 2: Verification Trends (Chart) + Risk Distribution (Donut) + Document Types (Donut) */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
@@ -119,7 +148,7 @@ export const AuthorityDashboard: React.FC<AuthorityDashboardProps> = ({
             {/* High Risk Cases Table (7 cols) */}
             <div className="lg:col-span-7">
               <HighRiskCases
-                cases={recentHighRiskCases}
+                cases={dynamicHighRiskCases}
                 onViewAll={() => setActiveNav('high_risk_cases')}
               />
             </div>

@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import type {
   DocumentData,
   DocumentType,
   InvestigationStatus,
+  VerificationResult,
+  PipelineStepStatus,
+  DemoScenarioId,
+  VerificationRecord,
 } from './types';
 import { mockPassportData } from './data/mockVerificationData';
 import { VerificationService } from './services/verificationService';
@@ -21,9 +25,9 @@ import { AiSummaryCard } from './components/AiSummaryCard';
 import { ActionButtons } from './components/ActionButtons';
 import { DetailedReportModal } from './components/DetailedReportModal';
 import { CameraScanModal } from './components/CameraScanModal';
+import { PastRecordsModal } from './components/PastRecordsModal';
 import { ToastContainer, type ToastMessage } from './components/Toast';
 import { AuthorityDashboard } from './pages/AuthorityDashboard';
-
 
 export function App() {
   // Navigation & Role/Portal Mode
@@ -47,9 +51,29 @@ export function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash.replace('#', '') !== currentPortal) {
+      window.location.hash = currentPortal;
+    }
+  }, [currentPortal]);
+
+  // Toast Helper
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const addToast = useCallback((type: ToastMessage['type'], title: string, description?: string) => {
+    const id = Date.now().toString() + Math.random().toString(36).substring(2, 6);
+    setToasts((prev) => [...prev, { id, type, title, description }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4500);
+  }, []);
+
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
   const handleSwitchPortal = (portal: 'authority' | 'investigator') => {
     setCurrentPortal(portal);
-    window.location.hash = portal;
     addToast(
       'info',
       `Switched to ${portal === 'authority' ? 'Authority Portal' : 'Investigator Console'}`,
@@ -59,10 +83,23 @@ export function App() {
 
   // Document & Verification State
   const [activeType, setActiveType] = useState<DocumentType>('passport');
+  const [selectedScenario, setSelectedScenario] = useState<DemoScenarioId>('tampered');
   const [documentData, setDocumentData] = useState<DocumentData>(mockPassportData);
-  
-  // Pipeline Step: Default to 7 (Risk Assessment) to match the reference image 1:1
+  const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
+
+  // Pipeline Step & Data-driven states
   const [currentStep, setCurrentStep] = useState<number>(7);
+  const [stepStates, setStepStates] = useState<Record<number, PipelineStepStatus>>({
+    1: 'COMPLETED',
+    2: 'COMPLETED',
+    3: 'WARNING',
+    4: 'COMPLETED',
+    5: 'FAILED',
+    6: 'COMPLETED',
+    7: 'WARNING',
+    8: 'NOT_STARTED',
+  });
+  const [stepMessages, setStepMessages] = useState<Record<number, string>>({});
   const [processingTime, setProcessingTime] = useState<string>('12.4 seconds');
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
 
@@ -70,19 +107,14 @@ export function App() {
   const [investigationStatus, setInvestigationStatus] = useState<InvestigationStatus>('unflagged');
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [isPastRecordsOpen, setIsPastRecordsOpen] = useState(false);
 
-  // Toast Helper
-  const addToast = (type: ToastMessage['type'], title: string, description?: string) => {
-    const id = Date.now().toString() + Math.random().toString(36).substring(2, 6);
-    setToasts((prev) => [...prev, { id, type, title, description }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4500);
-  };
-
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+  // Handle Sidebar navigation
+  const handleNavClick = (navId: string) => {
+    setActiveNav(navId);
+    if (navId === 'past_records') {
+      setIsPastRecordsOpen(true);
+    }
   };
 
   // Switch Document Type
@@ -95,40 +127,95 @@ export function App() {
     addToast('info', `Switched to ${type.toUpperCase()} Record`, `Loaded ${data.title}`);
   };
 
-  // Simulated Full Pipeline Runner
+  // Switch Demo Scenario
+  const handleScenarioChange = (scenarioId: DemoScenarioId) => {
+    setSelectedScenario(scenarioId);
+    const data = VerificationService.getScenarioData(scenarioId);
+    setActiveType(data.type);
+    setDocumentData(data);
+    setInvestigationStatus('unflagged');
+    setCurrentStep(1);
+    addToast('info', `Loaded Scenario: ${scenarioId.toUpperCase()}`, data.title);
+  };
+
+  // Sequential Data-Driven Pipeline Runner
   const handleStartSimulation = async () => {
     if (isSimulating) return;
     setIsSimulating(true);
     setCurrentStep(1);
     setInvestigationStatus('unflagged');
 
-    const startTime = performance.now();
+    // Reset step states
+    setStepStates({
+      1: 'PROCESSING',
+      2: 'NOT_STARTED',
+      3: 'NOT_STARTED',
+      4: 'NOT_STARTED',
+      5: 'NOT_STARTED',
+      6: 'NOT_STARTED',
+      7: 'NOT_STARTED',
+      8: 'NOT_STARTED',
+    });
+    setStepMessages({});
 
     try {
-      await VerificationService.runPipelineSimulation(activeType, (step) => {
-        setCurrentStep(step);
-      });
+      const result = await VerificationService.runVerification(
+        documentData,
+        selectedScenario,
+        (stepIndex, _stepName, status, details) => {
+          setCurrentStep(stepIndex);
+          setStepStates((prev) => ({ ...prev, [stepIndex]: status }));
+          if (details) {
+            setStepMessages((prev) => ({ ...prev, [stepIndex]: details }));
+          }
+        }
+      );
 
-      const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
-      setProcessingTime(`${elapsed} seconds`);
-      setCurrentStep(8); // Completed
+      setVerificationResult(result);
+      setDocumentData(result.document);
+      setProcessingTime(result.document.processingTime);
+      setCurrentStep(8);
 
-      if (documentData.riskScore > 50) {
+      if (result.risk.score >= 60) {
         addToast(
           'warning',
           'High Risk Anomalies Detected',
-          'Document contains forensic inconsistencies. Manual inspection recommended.'
+          `Risk Score: ${result.risk.score}/100. ${result.recommendations[0]}`
+        );
+      } else if (result.risk.score >= 30) {
+        addToast(
+          'warning',
+          'Medium Risk — Review Required',
+          `Risk Score: ${result.risk.score}/100. Verification requires supervisory review.`
         );
       } else {
         confetti({ particleCount: 60, spread: 60, origin: { y: 0.8 } });
-        addToast('success', 'Verification Complete', 'All checks passed within normal thresholds.');
+        addToast(
+          'success',
+          'Verification Cleared',
+          `All checks passed within normal thresholds (Risk: ${result.risk.score}/100).`
+        );
       }
     } catch (err) {
+      console.error('[Pipeline] Execution error:', err);
       addToast('error', 'Pipeline Error', 'Verification pipeline interrupted.');
     } finally {
       setIsSimulating(false);
     }
   };
+
+  // Initial verification state preparation so detailed report modal has content immediately
+  useEffect(() => {
+    let isMounted = true;
+    VerificationService.runVerification(documentData, selectedScenario).then((res) => {
+      if (isMounted) {
+        setVerificationResult(res);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedScenario, documentData]);
 
   // Upload / Replace Image Handler
   const handleImageReplace = async (file: File) => {
@@ -140,7 +227,8 @@ export function App() {
       }));
       addToast('success', 'New Document Uploaded', file.name);
       handleStartSimulation();
-    } catch (e) {
+    } catch (err) {
+      console.error('[Upload] Failed:', err);
       addToast('error', 'Upload Failed', 'Could not process document image.');
     }
   };
@@ -154,6 +242,14 @@ export function App() {
   // Action: Save to Records
   const handleSaveToRecords = () => {
     setInvestigationStatus('saved');
+    if (verificationResult) {
+      VerificationService.saveVerificationRecord(
+        verificationResult,
+        'Inspector A. Verma (SSB-41)',
+        'SSB Checkpoint A-14',
+        'SAVED'
+      );
+    }
     addToast(
       'success',
       'Saved to Investigation Records',
@@ -164,6 +260,14 @@ export function App() {
   // Action: Flag for Investigation
   const handleFlagForInvestigation = () => {
     setInvestigationStatus('flagged');
+    if (verificationResult) {
+      VerificationService.saveVerificationRecord(
+        verificationResult,
+        'Inspector A. Verma (SSB-41)',
+        'SSB Checkpoint A-14',
+        'FLAGGED'
+      );
+    }
     addToast(
       'warning',
       'FLAGGED FOR INVESTIGATION',
@@ -175,8 +279,28 @@ export function App() {
   const handleClear = () => {
     setInvestigationStatus('unflagged');
     setCurrentStep(1);
+    setStepStates({
+      1: 'NOT_STARTED',
+      2: 'NOT_STARTED',
+      3: 'NOT_STARTED',
+      4: 'NOT_STARTED',
+      5: 'NOT_STARTED',
+      6: 'NOT_STARTED',
+      7: 'NOT_STARTED',
+      8: 'NOT_STARTED',
+    });
     setProcessingTime('0.0 seconds');
     addToast('info', 'Console Reset', 'Ready for next document screening.');
+  };
+
+  // Select historical record from Past Records
+  const handleSelectPastRecord = (rec: VerificationRecord) => {
+    setIsPastRecordsOpen(false);
+    if (rec.scenarioId) {
+      handleScenarioChange(rec.scenarioId as DemoScenarioId);
+    }
+    setIsReportModalOpen(true);
+    addToast('info', 'Loaded Archived Record', `Dossier #${rec.verificationId}`);
   };
 
   if (currentPortal === 'authority') {
@@ -196,7 +320,7 @@ export function App() {
       {/* 1. Dark Navy Sidebar (Left) */}
       <Sidebar
         activeNav={activeNav}
-        setActiveNav={setActiveNav}
+        setActiveNav={handleNavClick}
         onNewVerification={() => {
           handleClear();
           setActiveNav('dashboard');
@@ -214,6 +338,8 @@ export function App() {
           {/* Top Verification Pipeline Card */}
           <PipelineProgress
             currentStep={currentStep}
+            stepStates={stepStates}
+            stepMessages={stepMessages}
             processingTime={processingTime}
             isSimulating={isSimulating}
             onStartSimulation={handleStartSimulation}
@@ -227,6 +353,8 @@ export function App() {
               <DocumentUploadCard
                 data={documentData}
                 activeType={activeType}
+                selectedScenario={selectedScenario}
+                onScenarioChange={handleScenarioChange}
                 onTypeChange={handleTypeChange}
                 onImageReplace={handleImageReplace}
                 onScanWithCamera={() => setIsCameraModalOpen(true)}
@@ -272,12 +400,19 @@ export function App() {
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
         data={documentData}
+        verificationResult={verificationResult}
       />
 
       <CameraScanModal
         isOpen={isCameraModalOpen}
         onClose={() => setIsCameraModalOpen(false)}
         onCapture={handleCameraCapture}
+      />
+
+      <PastRecordsModal
+        isOpen={isPastRecordsOpen}
+        onClose={() => setIsPastRecordsOpen(false)}
+        onSelectRecord={handleSelectPastRecord}
       />
 
       <ToastContainer toasts={toasts} onDismiss={removeToast} />

@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { RotateCw, Camera, UploadCloud } from 'lucide-react';
-import type { DocumentData, DocumentType } from '../types';
+import { RotateCw, Camera, UploadCloud, Sparkles } from 'lucide-react';
+import type { DocumentData, DocumentType, DemoScenarioId } from '../types';
 import { PassportDocumentView } from './PassportDocumentView';
 
 interface DocumentUploadCardProps {
@@ -9,6 +9,8 @@ interface DocumentUploadCardProps {
   onTypeChange: (type: DocumentType) => void;
   onImageReplace: (file: File) => void;
   onScanWithCamera: () => void;
+  selectedScenario?: DemoScenarioId;
+  onScenarioChange?: (scenario: DemoScenarioId) => void;
 }
 
 export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
@@ -17,6 +19,8 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
   onTypeChange,
   onImageReplace,
   onScanWithCamera,
+  selectedScenario = 'tampered',
+  onScenarioChange,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -54,9 +58,30 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
     <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs p-4 flex flex-col justify-between">
       {/* Card Header */}
       <div>
-        <h3 className="text-[14px] font-bold text-slate-800 tracking-tight mb-3">
-          1. Document Upload
-        </h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-[14px] font-bold text-slate-800 tracking-tight">
+            1. Document Upload
+          </h3>
+
+          {/* Demo Scenario Selector Quick Pill */}
+          {onScenarioChange && (
+            <div className="flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
+              <select
+                value={selectedScenario}
+                onChange={(e) => onScenarioChange(e.target.value as DemoScenarioId)}
+                className="text-[10.5px] font-semibold text-slate-700 bg-amber-50/70 border border-amber-300/80 rounded-md py-0.5 px-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer shadow-2xs"
+                title="Select a predefined realistic verification scenario"
+              >
+                <option value="genuine">Scenario 1: Genuine (Low Risk)</option>
+                <option value="tampered">Scenario 2: Tampered (Photo/NFC)</option>
+                <option value="expired">Scenario 3: Expired Document</option>
+                <option value="watchlist">Scenario 4: Watchlist Hit</option>
+                <option value="low_ocr">Scenario 5: Degraded OCR Quality</option>
+              </select>
+            </div>
+          )}
+        </div>
 
         {/* Document Type Segmented Tabs */}
         <div className="flex rounded-lg bg-slate-100/90 p-1 mb-3.5 border border-slate-200/70">

@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Camera, RefreshCw } from 'lucide-react';
 
-
 interface CameraScanModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -14,42 +13,49 @@ export const CameraScanModal: React.FC<CameraScanModalProps> = ({
   onCapture,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [hasCamera, setHasCamera] = useState<boolean | null>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const activeStreamRef = useRef<MediaStream | null>(null);
+  const [hasCamera, setHasCamera] = useState<boolean>(false);
   const [isScanning, setIsScanning] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-        setStream(null);
+      if (activeStreamRef.current) {
+        activeStreamRef.current.getTracks().forEach((track) => track.stop());
+        activeStreamRef.current = null;
       }
-      setHasCamera(null);
       return;
     }
 
-    // Try starting camera
-    async function startCamera() {
-      try {
-        const mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-        });
-        setStream(mediaStream);
+    let isMounted = true;
+
+    // Attempt starting physical optical webcam
+    navigator.mediaDevices
+      ?.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+      })
+      .then((mediaStream) => {
+        if (!isMounted) {
+          mediaStream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        activeStreamRef.current = mediaStream;
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
         }
         setHasCamera(true);
-      } catch (err) {
-        // Fallback to simulated high-res scanner view
-        setHasCamera(false);
-      }
-    }
-
-    startCamera();
+      })
+      .catch(() => {
+        // Fallback to simulated checkpoint optical scanner feed
+        if (isMounted) {
+          setHasCamera(false);
+        }
+      });
 
     return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
+      isMounted = false;
+      if (activeStreamRef.current) {
+        activeStreamRef.current.getTracks().forEach((track) => track.stop());
+        activeStreamRef.current = null;
       }
     };
   }, [isOpen]);
