@@ -37,8 +37,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTestStatus('testing');
     setTestMessage('Pinging server...');
     try {
-      const cleanUrl = apiUrl.replace(/\/+$/, '');
-      const res = await fetch(`${cleanUrl}/api/v1/session/current`);
+      const cleanUrl = (apiUrl || '').trim().replace(/\/+$/, '');
+      const testUrl = cleanUrl ? `${cleanUrl}/api/v1/session/current` : '/api/v1/session/current';
+      const res = await fetch(testUrl);
       if (res.ok) {
         const json = await res.json();
         setTestStatus('success');
@@ -83,12 +84,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               type="text"
               value={apiUrl}
               onChange={(e) => setApiUrl(e.target.value)}
-              placeholder="http://192.168.166.12:5000"
+              placeholder="Default: /api (Vite HTTPS Proxy)"
               className="w-full bg-slate-900/80 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
             />
           </div>
           <p className="text-[10.5px] text-slate-400">
-            Use your workstation's local Wi-Fi IP and port 5000.
+            Leave empty for automatic HTTPS proxy (recommended), or enter custom URL.
           </p>
         </div>
 

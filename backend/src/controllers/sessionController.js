@@ -13,8 +13,8 @@ export class SessionController {
 
   static initSession(req, res) {
     try {
-      const { sessionId } = req.body || {};
-      const session = sessionService.createSession(sessionId);
+      const { sessionId, document } = req.body || {};
+      const session = sessionService.createSession(sessionId, { document });
       return sendSuccess(res, session, 'New verification session initialized', 201);
     } catch (err) {
       return sendError(res, 'Failed to initialize session', 500, err.message);

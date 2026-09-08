@@ -31,26 +31,27 @@ export default function App() {
   // Poll active session & send heartbeat
   const syncSession = useCallback(async () => {
     try {
-      // 1. If we don't have session or need to find current
-      const current = await MobileApiService.getSession(sessionId);
-      if (current) {
-        setSession(current);
+      // 1. Prioritize discovering active verification session from desktop/backend
+      const currentActive = await MobileApiService.getCurrentSession();
+      if (currentActive && currentActive.sessionId) {
+        if (currentActive.sessionId !== sessionId) {
+          setSessionId(currentActive.sessionId);
+        }
+        setSession(currentActive);
         setConnected(true);
-      } else {
-        // Fallback to discovering current session
-        const discovered = await MobileApiService.getCurrentSession();
-        if (discovered) {
-          setSession(discovered);
-          setSessionId(discovered.sessionId);
+        await MobileApiService.sendHeartbeat(currentActive.sessionId);
+      } else if (sessionId) {
+        // Fallback to explicit session lookup
+        const current = await MobileApiService.getSession(sessionId);
+        if (current) {
+          setSession(current);
           setConnected(true);
+          await MobileApiService.sendHeartbeat(sessionId);
         } else {
           setConnected(false);
         }
-      }
-
-      // 2. Send heartbeat to keep desktop aware
-      if (sessionId) {
-        await MobileApiService.sendHeartbeat(sessionId);
+      } else {
+        setConnected(false);
       }
     } catch {
       setConnected(false);

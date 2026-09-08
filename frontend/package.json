@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test": "npx tsx tests/riskEngine.test.ts && npx tsx tests/prePipelineEmptyState.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

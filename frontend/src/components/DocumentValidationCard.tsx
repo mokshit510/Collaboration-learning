@@ -64,7 +64,7 @@ export const DocumentValidationCard: React.FC<DocumentValidationCardProps> = ({ 
         </div>
 
         <div className="text-[10.5px] text-slate-400 mb-2.5">
-          ICAO 9303 Checksums, Field Formats &amp; Temporal Rules
+          Field Formats, Chronology &amp; Temporal Rules
         </div>
 
         {/* Checklist Rows */}

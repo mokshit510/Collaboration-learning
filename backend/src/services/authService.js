@@ -71,8 +71,8 @@ export class AuthService {
           },
         };
       } catch (err) {
-        // If not running in mock mode, rethrow
-        if (!config.ai.isMock) {
+        // If in production mode, rethrow
+        if (config.isProduction) {
           throw err;
         }
         console.warn('[AuthService] Supabase login error, falling back to mock:', err.message);

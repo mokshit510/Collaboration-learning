@@ -24,15 +24,19 @@ export function getDefaultApiBase(): string {
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem('pramaan_api_base');
     if (saved) return saved;
-    const host = window.location.hostname || 'localhost';
-    return `http://${host}:5000`;
+    // Default to empty string so requests use relative /api paths through Vite's HTTPS proxy
+    return '';
   }
-  return 'http://localhost:5000';
+  return '';
 }
 
 export function setCustomApiBase(url: string) {
-  const clean = url.replace(/\/+$/, '');
-  localStorage.setItem('pramaan_api_base', clean);
+  const clean = (url || '').trim().replace(/\/+$/, '');
+  if (!clean || clean === '/api' || clean === '/') {
+    localStorage.removeItem('pramaan_api_base');
+  } else {
+    localStorage.setItem('pramaan_api_base', clean);
+  }
 }
 
 export class MobileApiService {

@@ -14,16 +14,32 @@ interface FaceVerificationCardProps {
 
 export const FaceVerificationCard: React.FC<FaceVerificationCardProps> = ({
   data,
+  faceResult,
   stepStatus,
   phoneConnected = false,
   sessionId = '',
   onRequestCapture,
   onSimulateFace,
 }) => {
-  const isWaiting = stepStatus === 'PROCESSING' && !data.livePhotoUrl;
-  const isMatch = data.faceMatchScore >= 80;
-  const isReview = data.faceMatchScore >= 65 && data.faceMatchScore < 80;
-  const isFail = data.faceMatchScore < 65;
+  const isWaiting = stepStatus === 'PROCESSING' && !faceResult?.livePhotoUrl;
+  const hasCompleted =
+    (stepStatus === 'COMPLETED' || stepStatus === 'WARNING' || stepStatus === 'FAILED') &&
+    faceResult !== null &&
+    faceResult !== undefined;
+
+  const score = faceResult?.matchScore ?? 0;
+  const isMatch = faceResult?.status === 'PASS';
+  const isReview = faceResult?.status === 'REVIEW';
+  const isFail = faceResult?.status === 'FAIL';
+  const statusText = isMatch
+    ? 'Faces match'
+    : isReview
+    ? 'Biometric review required'
+    : isFail
+    ? 'Facial mismatch'
+    : 'Face verification not run';
+
+  const livePhotoUrl = faceResult?.livePhotoUrl || (hasCompleted ? data.livePhotoUrl : undefined);
 
   return (
     <div
@@ -52,9 +68,21 @@ export const FaceVerificationCard: React.FC<FaceVerificationCardProps> = ({
                 <Radio className="w-3 h-3 text-blue-600 animate-ping" />
                 <span>WAITING FOR LIVE PHOTO</span>
               </span>
+            ) : hasCompleted ? (
+              <span
+                className={`text-[9.5px] font-mono font-bold px-2 py-0.5 rounded border ${
+                  isMatch
+                    ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                    : isReview
+                    ? 'text-amber-700 bg-amber-50 border-amber-200'
+                    : 'text-red-700 bg-red-50 border-red-200'
+                }`}
+              >
+                {isMatch ? 'FACE MATCH' : isReview ? 'REVIEW REQUIRED' : 'FACE MISMATCH'}
+              </span>
             ) : (
-              <span className="text-[9.5px] font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-                Liveness: PASS
+              <span className="text-[9.5px] font-mono font-bold px-2 py-0.5 rounded border text-slate-500 bg-slate-100 border-slate-200">
+                Awaiting Pipeline
               </span>
             )}
           </div>
@@ -146,11 +174,18 @@ export const FaceVerificationCard: React.FC<FaceVerificationCardProps> = ({
               {/* Document Photo */}
               <div className="flex-1 flex flex-col items-center">
                 <div className="relative w-full aspect-square rounded-lg overflow-hidden border border-slate-300 shadow-2xs bg-slate-100">
-                  <img
-                    src={data.photoUrl}
-                    alt="Document Portrait"
-                    className="w-full h-full object-cover object-top"
-                  />
+                  {data.photoUrl ? (
+                    <img
+                      src={data.photoUrl}
+                      alt="Document Portrait"
+                      className="w-full h-full object-cover object-top"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 p-2 text-center">
+                      <Camera className="w-5 h-5 mb-1 text-slate-300" />
+                      <span className="text-[9px]">Awaiting Doc</span>
+                    </div>
+                  )}
                   <div className="absolute top-1 left-1 bg-black/60 text-[8px] text-white px-1 py-0.5 rounded font-mono">
                     DOC
                   </div>
@@ -163,22 +198,24 @@ export const FaceVerificationCard: React.FC<FaceVerificationCardProps> = ({
               {/* Live Capture Photo */}
               <div className="flex-1 flex flex-col items-center">
                 <div className="relative w-full aspect-square rounded-lg overflow-hidden border border-slate-300 shadow-2xs bg-slate-100">
-                  {data.livePhotoUrl ? (
+                  {livePhotoUrl ? (
                     <img
-                      src={data.livePhotoUrl}
+                      src={livePhotoUrl}
                       alt="Live Mobile Checkpoint Capture"
                       className="w-full h-full object-cover object-top"
                     />
                   ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 p-2 text-center">
-                      <Camera className="w-5 h-5 mb-1" />
+                      <Camera className="w-5 h-5 mb-1 text-slate-300" />
                       <span className="text-[9px]">Awaiting Feed</span>
                     </div>
                   )}
-                  <div className="absolute top-1 right-1 flex items-center gap-1 bg-red-600 text-[8px] text-white px-1 py-0.5 rounded font-mono">
-                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                    LIVE
-                  </div>
+                  {livePhotoUrl && (
+                    <div className="absolute top-1 right-1 flex items-center gap-1 bg-red-600 text-[8px] text-white px-1 py-0.5 rounded font-mono">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                      LIVE
+                    </div>
+                  )}
                 </div>
                 <span className="text-[10px] font-medium text-slate-500 mt-1">
                   Live Phone Feed
@@ -186,39 +223,53 @@ export const FaceVerificationCard: React.FC<FaceVerificationCardProps> = ({
               </div>
             </div>
 
-            {/* Right Side: Face Match Score Card */}
-            <div
-              className={`col-span-12 sm:col-span-5 h-full flex flex-col justify-center rounded-xl p-3 text-center border ${
-                isMatch
-                  ? 'bg-[#EDF7EE] border-emerald-200/80 text-emerald-800'
-                  : isReview
-                  ? 'bg-amber-50 border-amber-200 text-amber-800'
-                  : 'bg-red-50 border-red-200 text-red-800'
-              }`}
-            >
-              <div className="text-[10.5px] font-bold tracking-tight">
-                Biometric Match
-              </div>
-
+            {/* Right Side: Face Match Score Card OR Empty State */}
+            {hasCompleted ? (
               <div
-                className={`text-[28px] font-extrabold leading-tight my-0.5 font-mono tracking-tight ${
+                className={`col-span-12 sm:col-span-5 h-full flex flex-col justify-center rounded-xl p-3 text-center border ${
                   isMatch
-                    ? 'text-[#16A34A]'
+                    ? 'bg-[#EDF7EE] border-emerald-200/80 text-emerald-800'
                     : isReview
-                    ? 'text-amber-600'
-                    : 'text-[#DC2626]'
+                    ? 'bg-amber-50 border-amber-200 text-amber-800'
+                    : 'bg-red-50 border-red-200 text-red-800'
                 }`}
               >
-                {data.faceMatchScore}%
-              </div>
+                <div className="text-[10.5px] font-bold tracking-tight">
+                  Biometric Match
+                </div>
 
-              <div className="inline-flex items-center justify-center gap-1 text-[10px] font-bold">
-                {isMatch && <CheckCircle2 className="w-3.5 h-3.5 text-[#16A34A]" />}
-                {isReview && <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
-                {isFail && <XCircle className="w-3.5 h-3.5 text-[#DC2626]" />}
-                <span className="truncate">{data.faceMatchStatus}</span>
+                <div
+                  className={`text-[28px] font-extrabold leading-tight my-0.5 font-mono tracking-tight ${
+                    isMatch
+                      ? 'text-[#16A34A]'
+                      : isReview
+                      ? 'text-amber-600'
+                      : 'text-[#DC2626]'
+                  }`}
+                >
+                  {score}%
+                </div>
+
+                <div className="inline-flex items-center justify-center gap-1 text-[10px] font-bold">
+                  {isMatch && <CheckCircle2 className="w-3.5 h-3.5 text-[#16A34A]" />}
+                  {isReview && <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
+                  {isFail && <XCircle className="w-3.5 h-3.5 text-[#DC2626]" />}
+                  <span className="truncate">{statusText}</span>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="col-span-12 sm:col-span-5 h-full flex flex-col justify-center items-center rounded-xl p-3 text-center border border-slate-200 bg-slate-50/80">
+                <div className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 mb-1 shadow-2xs">
+                  <Camera className="w-4 h-4 text-slate-400" />
+                </div>
+                <div className="text-[11.5px] font-bold text-slate-700 leading-snug">
+                  Awaiting pipeline execution
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  Face verification not run
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

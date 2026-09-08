@@ -15,14 +15,14 @@ const fileFilter = (req, file, cb) => {
   if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    const err = new Error('Only JPG, JPEG, PNG or WEBP images up to 2 MB are allowed.');
+    const err = new Error('Only JPG, JPEG, PNG or WEBP images are allowed.');
     err.statusCode = 400;
     cb(err, false);
   }
 };
 
 const limits = {
-  fileSize: 2 * 1024 * 1024, // 2MB
+  fileSize: 15 * 1024 * 1024, // 15MB
   files: 5,
 };
 
@@ -45,8 +45,20 @@ export const uploadVerificationFiles = upload.fields([
   { name: 'selfie', maxCount: 1 },
 ]);
 
+/**
+ * Multi-field upload for Face Verification (accepts document / documentPhoto and live_face / livePhoto / selfie)
+ */
+export const uploadFaceFiles = upload.fields([
+  { name: 'document', maxCount: 1 },
+  { name: 'documentPhoto', maxCount: 1 },
+  { name: 'live_face', maxCount: 1 },
+  { name: 'livePhoto', maxCount: 1 },
+  { name: 'selfie', maxCount: 1 },
+]);
+
 export default {
   upload,
   uploadSingleDocument,
   uploadVerificationFiles,
+  uploadFaceFiles,
 };

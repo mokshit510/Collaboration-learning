@@ -318,7 +318,8 @@ export const FaceCameraScreen: React.FC<FaceCameraScreenProps> = ({
                   Biometric Face Match: {faceFeedback.matchScore}%
                 </div>
                 <div className="text-[10px] text-emerald-400">
-                  Liveness: {faceFeedback.liveness} • Confidence: {faceFeedback.confidence}%
+                  Liveness: {faceFeedback.liveness ? faceFeedback.liveness.replace('_', ' ') : 'NOT EVALUATED'}
+                  {typeof faceFeedback.confidence === 'number' ? ` • Confidence: ${faceFeedback.confidence}%` : ''}
                 </div>
               </div>
             </div>

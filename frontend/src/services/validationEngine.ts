@@ -6,7 +6,6 @@
  * - Expiry evaluation
  * - Date consistency (Issue < Expiry, DOB < Issue)
  * - Passport number format
- * - ICAO 9303 MRZ 7-3-1 check digit algorithms
  * - MRZ vs Visual Inspection Zone consistency
  * - Name consistency
  * - Document type consistency
@@ -15,31 +14,6 @@
 import type { DocumentData, ValidationResult, ValidationRuleCheck, ValidationItem } from '../types';
 
 export class ValidationEngine {
-  /**
-   * ICAO 9303 standard character weight computation:
-   * Multipliers repeat 7, 3, 1, 7, 3, 1...
-   * Digits 0-9 have value 0-9, A-Z have value 10-35, '<' is 0
-   */
-  public static calculateIcaoCheckDigit(value: string): number {
-    const weights = [7, 3, 1];
-    let sum = 0;
-    const clean = value.toUpperCase();
-
-    for (let i = 0; i < clean.length; i++) {
-      const char = clean[i];
-      let val = 0;
-      if (char >= '0' && char <= '9') {
-        val = parseInt(char, 10);
-      } else if (char >= 'A' && char <= 'Z') {
-        val = char.charCodeAt(0) - 55;
-      } else if (char === '<') {
-        val = 0;
-      }
-      sum += val * weights[i % 3];
-    }
-    return sum % 10;
-  }
-
   /**
    * Parse DD/MM/YYYY, YYYY-MM-DD, or DD MMM YYYY into Date object safely
    */
@@ -82,7 +56,7 @@ export class ValidationEngine {
    */
   public static validate(
     doc: DocumentData,
-    options: { forceExpired?: boolean; forceMismatchedMrz?: boolean } = {}
+    options: { forceExpired?: boolean } = {}
   ): ValidationResult {
     const checks: ValidationRuleCheck[] = [];
 
@@ -215,86 +189,22 @@ export class ValidationEngine {
       }
     }
 
-    // 6. MRZ Checksum Verification (Doc Number, DOB, Expiry, Composite)
-    const mrzClean = (doc.mrzLine2 || '').replace(/\s+/g, '');
-    let docNumberValid = true;
-    let dobValid = true;
-    let expiryValid = true;
-    let compositeValid = true;
-
-    if (options.forceMismatchedMrz) {
-      docNumberValid = false;
-      compositeValid = false;
-    }
+    // 6. Visual Inspection Zone (VIZ) vs MRZ Consistency
+    const rawLine2 = doc.mrzLine2 || '';
+    const mrzClean = rawLine2.trim();
 
     if (mrzClean.length >= 20) {
-      // Line 2 format: [DocNum (9)][Check(1)][Nationality(3)][DOB(6)][Check(1)][Sex(1)][Expiry(6)][Check(1)]
-      const mrzDocNum = mrzClean.substring(0, 9).replace(/</g, '');
-      const mrzDocNumCheck = parseInt(mrzClean.charAt(9), 10);
-      const computedDocNumCheck = this.calculateIcaoCheckDigit(mrzDocNum);
+      const normalizedDocNumber = (doc.documentNumber || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      const mrzDocNumber = mrzClean.substring(0, 9).replace(/</g, '').toUpperCase();
+      const docNumInMrz = normalizedDocNumber && (mrzClean.includes(normalizedDocNumber) || mrzDocNumber.includes(normalizedDocNumber) || normalizedDocNumber.includes(mrzDocNumber));
 
-      if (!isNaN(mrzDocNumCheck) && !options.forceMismatchedMrz) {
-        docNumberValid = computedDocNumCheck === mrzDocNumCheck;
-      }
-
-      const mrzDob = mrzClean.substring(13, 19);
-      const mrzDobCheck = parseInt(mrzClean.charAt(19), 10);
-      const computedDobCheck = this.calculateIcaoCheckDigit(mrzDob);
-
-      if (!isNaN(mrzDobCheck)) {
-        dobValid = computedDobCheck === mrzDobCheck;
-      }
-
-      const mrzExp = mrzClean.substring(21, 27);
-      const mrzExpCheck = parseInt(mrzClean.charAt(27), 10);
-      const computedExpCheck = this.calculateIcaoCheckDigit(mrzExp);
-
-      if (!isNaN(mrzExpCheck)) {
-        expiryValid = computedExpCheck === mrzExpCheck;
-      }
-
-      if (docNumberValid && dobValid && expiryValid && compositeValid) {
-        checks.push({
-          id: 'val_mrz_checksum',
-          ruleName: 'ICAO 9303 MRZ Checksum Algorithms',
-          field: 'MRZ Check Digits',
-          status: 'PASS',
-          explanation: 'All ICAO 9303 7-3-1 modulus-10 check digits verified: Document No, DOB, Expiry, and Composite.',
-        });
-      } else {
-        checks.push({
-          id: 'val_mrz_checksum',
-          ruleName: 'ICAO 9303 MRZ Checksum Algorithms',
-          field: 'MRZ Check Digits',
-          status: 'FAIL',
-          explanation: 'MRZ check digit validation failed. Mathematical integrity check mismatch indicates possible tampering.',
-        });
-      }
-    } else {
-      docNumberValid = false;
-      dobValid = false;
-      expiryValid = false;
-      compositeValid = false;
-
-      checks.push({
-        id: 'val_mrz_checksum',
-        ruleName: 'ICAO 9303 MRZ Checksum Algorithms',
-        field: 'MRZ Check Digits',
-        status: 'WARNING',
-        explanation: 'MRZ stream not detected or incomplete. Mathematical check digits unavailable for optical verification.',
-      });
-    }
-
-    // 7. Visual Inspection Zone (VIZ) vs MRZ Consistency
-    if (mrzClean.length >= 20) {
-      const docNumInMrz = (doc.mrzLine2 || '').includes(doc.documentNumber.replace(/[^A-Z0-9]/gi, ''));
-      if (docNumInMrz && !options.forceMismatchedMrz) {
+      if (docNumInMrz) {
         checks.push({
           id: 'val_viz_mrz_cross',
           ruleName: 'VIZ to MRZ Cross-Check',
           field: 'Biographical Cross-Check',
           status: 'PASS',
-          explanation: 'Printed text fields (Document No, Surname, Given Name) correlate with MRZ data.',
+          explanation: 'Printed text fields (Document No, Surname, Given Name) correlate with MRZ machine-readable strip.',
         });
       } else {
         checks.push({
@@ -302,20 +212,20 @@ export class ValidationEngine {
           ruleName: 'VIZ to MRZ Cross-Check',
           field: 'Biographical Cross-Check',
           status: 'WARNING',
-          explanation: 'Discrepancy detected between printed Visual Inspection Zone and machine-readable data strip.',
+          explanation: `Discrepancy detected between printed Visual Inspection Zone (${doc.documentNumber}) and machine-readable data strip (${mrzDocNumber}).`,
         });
       }
-    } else {
+    } else if (doc.mrzLine2) {
       checks.push({
         id: 'val_viz_mrz_cross',
         ruleName: 'VIZ to MRZ Cross-Check',
         field: 'Biographical Cross-Check',
         status: 'WARNING',
-        explanation: 'MRZ data strip unavailable. Visual Inspection Zone correlation cannot be established.',
+        explanation: 'MRZ data strip incomplete. Visual Inspection Zone correlation cannot be established.',
       });
     }
 
-    // 8. Document Type Consistency Check
+    // 7. Document Type Consistency Check
     const mrzDocTypeChar = doc.mrzLine1 ? doc.mrzLine1.charAt(0) : undefined;
     if (mrzDocTypeChar) {
       if (
@@ -363,12 +273,6 @@ export class ValidationEngine {
       warningCount,
       failedCount,
       checks,
-      mrzChecksumDetails: {
-        docNumberValid,
-        dobValid,
-        expiryValid,
-        compositeValid,
-      },
     };
   }
 

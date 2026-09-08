@@ -34,6 +34,7 @@ class SessionService {
       document: null,
       nfcResult: null,
       faceResult: null,
+      tamperingResult: null,
       updatedAt: new Date().toISOString(),
     };
 
@@ -42,20 +43,29 @@ class SessionService {
     return session;
   }
 
-  createSession(customId = null) {
+  createSession(customId = null, options = {}) {
     const sessionId = customId || this.generateSessionId();
+
+    // Preserve active device pairing / heartbeat if active within last 9 seconds (Step 14)
+    const prevSession = this.activeSessionId ? this.sessions.get(this.activeSessionId) : null;
+    const hasRecentPing = prevSession?.lastPhonePing && (Date.now() - new Date(prevSession.lastPhonePing).getTime() < 9000);
+    const lastPhonePing = hasRecentPing ? prevSession.lastPhonePing : null;
+    const deviceInfo = hasRecentPing ? { ...prevSession.deviceInfo } : null;
+    const phoneConnected = Boolean(hasRecentPing);
+
     const session = {
       sessionId,
       createdAt: new Date().toISOString(),
-      phoneConnected: false,
-      lastPhonePing: null,
-      deviceInfo: null,
+      phoneConnected,
+      lastPhonePing,
+      deviceInfo,
       currentStage: 1,
       stageName: 'DOCUMENT_UPLOAD',
       faceCaptureRequested: false,
-      document: null,
+      document: options.document || null,
       nfcResult: null,
       faceResult: null,
+      tamperingResult: null,
       updatedAt: new Date().toISOString(),
     };
 
@@ -134,6 +144,13 @@ class SessionService {
     const session = this.getSession(sessionId);
     if (!session) return null;
 
+    if (nfcResult && typeof nfcResult === 'object') {
+      nfcResult.sessionId = session.sessionId;
+      if (session.document?.documentNumber) {
+        nfcResult.documentNumber = session.document.documentNumber;
+      }
+    }
+
     session.nfcResult = nfcResult;
     session.currentStage = Math.max(session.currentStage, 3);
     session.stageName = 'NFC_RECEIVED';
@@ -145,10 +162,33 @@ class SessionService {
     const session = this.getSession(sessionId);
     if (!session) return null;
 
+    if (faceResult && typeof faceResult === 'object') {
+      faceResult.sessionId = session.sessionId;
+      if (session.document?.documentNumber) {
+        faceResult.documentNumber = session.document.documentNumber;
+      }
+    }
+
     session.faceResult = faceResult;
     session.faceCaptureRequested = false;
     session.currentStage = Math.max(session.currentStage, 6);
     session.stageName = 'FACE_RECEIVED';
+    session.updatedAt = new Date().toISOString();
+    return session;
+  }
+
+  setTamperingResult(sessionId, tamperingResult) {
+    const session = this.getSession(sessionId);
+    if (!session) return null;
+
+    if (tamperingResult && typeof tamperingResult === 'object') {
+      tamperingResult.sessionId = session.sessionId;
+      if (session.document?.documentNumber) {
+        tamperingResult.documentNumber = session.document.documentNumber;
+      }
+    }
+
+    session.tamperingResult = tamperingResult;
     session.updatedAt = new Date().toISOString();
     return session;
   }
@@ -172,6 +212,7 @@ class SessionService {
     session.document = null;
     session.nfcResult = null;
     session.faceResult = null;
+    session.tamperingResult = null;
     session.updatedAt = new Date().toISOString();
     return session;
   }

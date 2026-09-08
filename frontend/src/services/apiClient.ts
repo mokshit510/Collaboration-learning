@@ -243,27 +243,126 @@ export class ApiClient {
     }
   }
 
-  public async analyzeTampering(payload: {
-    image: string;
-    documentType: DocumentType;
-  }): Promise<TamperingResult> {
-    return this.request<TamperingResult>('/v1/tampering', {
+  public async analyzeTampering(
+    input: File | Blob | FormData | { image?: string; document?: string; documentType?: DocumentType; sessionId?: string },
+    options: { sessionId?: string; documentType?: DocumentType } = {}
+  ): Promise<TamperingResult> {
+    const sessionId =
+      options.sessionId ||
+      (typeof input === 'object' &&
+      !(input instanceof File) &&
+      !(input instanceof Blob) &&
+      !(input instanceof FormData)
+        ? input.sessionId
+        : undefined);
+
+    let body: BodyInit;
+    const headers: Record<string, string> = {};
+    if (sessionId) {
+      headers['X-Session-Id'] = sessionId;
+    }
+
+    if (input instanceof FormData) {
+      body = input;
+      if (sessionId && !input.has('sessionId')) {
+        input.append('sessionId', sessionId);
+      }
+    } else if (input instanceof File || input instanceof Blob) {
+      const formData = new FormData();
+      const filename = input instanceof File ? input.name : 'document.jpg';
+      formData.append('document', input, filename);
+      if (sessionId) formData.append('sessionId', sessionId);
+      if (options.documentType) formData.append('documentType', options.documentType);
+      body = formData;
+    } else {
+      const payload: Record<string, any> = { ...input };
+      if (sessionId && !payload.sessionId) payload.sessionId = sessionId;
+      if (options.documentType && !payload.documentType) payload.documentType = options.documentType;
+      body = JSON.stringify(payload);
+    }
+
+    const response = await this.request<{
+      success: boolean;
+      data: TamperingResult;
+      message?: string;
+    }>('/v1/tampering', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body,
+      headers,
     });
+
+    if (response && response.data) {
+      return response.data;
+    }
+
+    return response as unknown as TamperingResult;
   }
 
-  public async verifyFace(payload: {
-    documentPhoto: string;
-    livePhoto: string;
-  }): Promise<FaceResult> {
-    return this.request<FaceResult>('/v1/face', {
+  public async verifyFace(
+    payload:
+      | FormData
+      | {
+          documentPhoto?: File | Blob | string;
+          livePhoto?: File | Blob | string;
+          sessionId?: string;
+          forceMismatch?: boolean;
+        }
+  ): Promise<FaceResult> {
+    let body: BodyInit;
+    const headers: Record<string, string> = {};
+
+    if (payload instanceof FormData) {
+      body = payload;
+    } else {
+      const docPhoto = payload.documentPhoto;
+      const livePhoto = payload.livePhoto;
+      const isMultipart =
+        (typeof docPhoto === 'object' && docPhoto !== null) ||
+        (typeof livePhoto === 'object' && livePhoto !== null);
+
+      if (isMultipart) {
+        const formData = new FormData();
+        if (payload.sessionId) {
+          formData.append('sessionId', payload.sessionId);
+          headers['x-session-id'] = payload.sessionId;
+        }
+        if (docPhoto && typeof docPhoto === 'object') {
+          formData.append('document', docPhoto, (docPhoto as File).name || 'document.jpg');
+        } else if (typeof docPhoto === 'string') {
+          formData.append('documentPhoto', docPhoto);
+        }
+
+        if (livePhoto && typeof livePhoto === 'object') {
+          formData.append('live_face', livePhoto, (livePhoto as File).name || 'live_face.jpg');
+        } else if (typeof livePhoto === 'string') {
+          formData.append('livePhoto', livePhoto);
+        }
+
+        body = formData;
+      } else {
+        if (payload.sessionId) {
+          headers['x-session-id'] = payload.sessionId;
+        }
+        body = JSON.stringify(payload);
+        headers['Content-Type'] = 'application/json';
+      }
+    }
+
+    const response = await this.request<any>('/v1/face/verify', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body,
+      headers,
     });
+
+    if (response && typeof response === 'object' && 'data' in response && response.data) {
+      return response.data as FaceResult;
+    }
+
+    return response as unknown as FaceResult;
   }
 
   public async verifyNfc(payload: {
+    sessionId?: string;
     printedData: Partial<DocumentData>;
     nfcData: string;
   }): Promise<NfcResult> {
