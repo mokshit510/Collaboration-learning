@@ -9,6 +9,7 @@ import healthRoutes from './routes/healthRoutes.js';
 import ocrRoutes from './routes/ocrRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import documentRoutes from './routes/documentRoutes.js';
+import referenceRoutes from './routes/referenceRoutes.js';
 
 const app = express();
 
@@ -16,17 +17,32 @@ const app = express();
 app.use(helmet());
 
 // CORS configuration for frontend integration
+const allowedOrigins = [
+  config.frontendUrl,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5174',
+  'http://localhost:5175',
+  'http://127.0.0.1:5175',
+  'http://localhost:3000',
+];
+
 app.use(
   cors({
-    origin: [
-      config.frontendUrl,
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-      'http://localhost:3000',
-    ],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (
+        allowedOrigins.includes(origin) ||
+        (!config.isProduction && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-mock-role', 'x-user-role'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-mock-role', 'x-user-role', 'Accept'],
   })
 );
 
@@ -64,6 +80,7 @@ app.get('/', (req, res) => {
 // Mount Routes
 app.use('/api/health', healthRoutes);
 app.use('/api/v1/ocr', ocrRoutes);
+app.use('/api/v1/reference', referenceRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentRoutes);
 

@@ -633,11 +633,16 @@ export function App() {
                   fields={documentData.ocrFields}
                   mrzLine={documentData.mrzLine2 || documentData.mrzLine1}
                   qualityStatus={verificationResult?.ocr?.qualityStatus}
+                  averageConfidence={verificationResult?.ocr?.averageConfidence}
                 />
 
                 <DocumentValidationCard items={documentData.validationItems} />
 
-                <IssuerVerificationCard items={documentData.issuerItems} />
+                <IssuerVerificationCard
+                  items={documentData.issuerItems}
+                  referenceComparison={documentData.referenceComparison}
+                  documentNumber={documentData.documentNumber}
+                />
 
               </div>
 

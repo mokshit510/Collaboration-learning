@@ -1,0 +1,97 @@
+# ==============================================================================
+# Git Ignore Configuration for PRAMAAN (SIH26188)
+# AI-Based Fake Identity & Document Screening System
+# ==============================================================================
+
+# --- Secrets & Environment Files (CRITICAL: NEVER COMMIT) ---
+.env
+.env.*
+*.env
+!.env.example
+backend/.env
+frontend/.env
+ai-services/**/.env
+
+# --- Node / JavaScript Dependencies ---
+node_modules/
+*/node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+
+# --- Python Virtual Environments & Bytecode ---
+__pycache__/
+*/__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+*/.venv/
+**/.venv/
+venv/
+*/venv/
+env/
+*/env/
+ENV/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Build Outputs ---
+dist/
+*/dist/
+**/dist/
+build/
+*/build/
+**/build/
+dist-ssr/
+*.tsbuildinfo
+
+# --- Logs & Debug Outputs ---
+*.log
+logs/
+*/logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- Temporary, Cache & Scratch Files ---
+.cache/
+.parcel-cache/
+tmp/
+*/tmp/
+temp/
+*/temp/
+.temp/
+*.tmp
+scratch/
+
+# --- Operating System & Editor Files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# --- Local Uploads & Test Output Images ---
+uploads/
+*/uploads/
+**/uploads/

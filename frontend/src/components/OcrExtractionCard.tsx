@@ -6,7 +6,23 @@ interface OcrExtractionCardProps {
   fields: OcrField[];
   mrzLine?: string;
   qualityStatus?: 'OPTIMAL' | 'MODERATE' | 'LOW';
+  averageConfidence?: number;
 }
+
+const FIELD_ORDER = [
+  'Full Name',
+  'Passport Number',
+  'Nationality',
+  'Date of Birth',
+  'Gender',
+  'Place of Birth',
+  'Date of Issue',
+  'Date of Expiry',
+  'Surname',
+  'Given Names',
+  'Country Code',
+  'Document Type',
+];
 
 const DEFAULT_PLACEHOLDER_FIELDS: OcrField[] = [
   { label: 'Full Name', value: '—', confidence: 0, valid: true },
@@ -23,14 +39,24 @@ export const OcrExtractionCard: React.FC<OcrExtractionCardProps> = ({
   fields,
   mrzLine,
   qualityStatus,
+  averageConfidence,
 }) => {
-  const displayFields = fields.length > 0 ? fields : DEFAULT_PLACEHOLDER_FIELDS;
+  const rawFields = fields.length > 0 ? fields : DEFAULT_PLACEHOLDER_FIELDS;
+  const displayFields = [...rawFields].sort((a, b) => {
+    const idxA = FIELD_ORDER.indexOf(a.label);
+    const idxB = FIELD_ORDER.indexOf(b.label);
+    return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+  });
+
   const isPrePipeline = displayFields.every((f) => !f.value || f.value === '—' || f.value === '-');
 
   const validFieldsWithConf = displayFields.filter((f) => f.confidence !== undefined && f.confidence > 0);
-  const avgConfidence = validFieldsWithConf.length
-    ? Math.round((validFieldsWithConf.reduce((acc, f) => acc + (f.confidence || 0), 0) / validFieldsWithConf.length) * 10) / 10
-    : null;
+  const avgConfidence =
+    averageConfidence !== undefined && averageConfidence > 0
+      ? Math.round(averageConfidence * 10) / 10
+      : validFieldsWithConf.length
+      ? Math.round((validFieldsWithConf.reduce((acc, f) => acc + (f.confidence || 0), 0) / validFieldsWithConf.length) * 10) / 10
+      : null;
 
   return (
     <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs p-4 flex flex-col justify-between">
@@ -146,7 +172,7 @@ export const OcrExtractionCard: React.FC<OcrExtractionCardProps> = ({
       {mrzLine && (
         <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-mono text-slate-400">
           <span className="truncate">MRZ: {mrzLine.slice(0, 24)}...</span>
-          <span className="text-emerald-600 font-bold font-sans text-[9.5px]">ICAO 9303 PASS</span>
+          <span className="text-slate-500 font-bold font-sans text-[9.5px]">ICAO 9303 STREAM</span>
         </div>
       )}
     </div>

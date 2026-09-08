@@ -524,22 +524,33 @@ export class VerificationService {
     // STEP 4: Issuer Verification (Simulated)
     // ----------------------------------------------------
     t0 = performance.now();
-    onStepProgress?.(4, 'Issuer Verification', 'PROCESSING', 'Querying simulated registry records');
+    onStepProgress?.(4, 'Issuer Verification', 'PROCESSING', 'Querying synthetic reference database');
     const issuerResult = await this.verifyIssuer(ocrDocument, {
       forceExpired: isExpiredScenario,
     });
     const issStatus: PipelineStepStatus =
-      issuerResult.registryStatus === 'EXPIRED' || issuerResult.registryStatus === 'REVOKED'
-        ? 'WARNING'
+      issuerResult.registryStatus === 'EXPIRED' ||
+      issuerResult.registryStatus === 'REVOKED' ||
+      issuerResult.registryStatus === 'BLACKLISTED' ||
+      issuerResult.registryStatus === 'MISMATCH' ||
+      issuerResult.registryStatus === 'NOT_FOUND'
+        ? (issuerResult.registryStatus === 'BLACKLISTED' || issuerResult.registryStatus === 'NOT_FOUND' ? 'FAILED' : 'WARNING')
         : 'COMPLETED';
+
+    const ocrDocumentWithIssuer: DocumentData = {
+      ...ocrDocument,
+      issuerItems: IssuerService.toLegacyIssuerItems(issuerResult),
+      referenceComparison: issuerResult.referenceComparison,
+    };
+
     recordAudit(
       4,
       'Issuer Verification',
-      issStatus === 'WARNING' ? 'WARNING' : 'COMPLETED',
-      `Simulated registry lookup returned status: ${issuerResult.registryStatus}.`,
+      issStatus === 'FAILED' ? 'FAILED' : issStatus === 'WARNING' ? 'WARNING' : 'COMPLETED',
+      `Reference database lookup returned status: ${issuerResult.registryStatus}.`,
       performance.now() - t0
     );
-    onStepProgress?.(4, 'Issuer Verification', issStatus, `Status: ${issuerResult.registryStatus}`);
+    onStepProgress?.(4, 'Issuer Verification', issStatus, `Status: ${issuerResult.registryStatus}`, ocrDocumentWithIssuer);
 
     // ----------------------------------------------------
     // STEP 5: Tampering Analysis (AI Forensics)
@@ -582,10 +593,9 @@ export class VerificationService {
     onStepProgress?.(6, 'Face Verification', faceStatus, `${faceResult.matchScore}% match`);
 
     // ----------------------------------------------------
-    // STEP 7: NFC, Reference & Watchlist Parallel Checks
+    // Parallel auxiliary checks: NFC, Reference & Watchlist
     // ----------------------------------------------------
     t0 = performance.now();
-    onStepProgress?.(7, 'Risk Assessment', 'PROCESSING', 'Fusing NFC, Reference specimen & Lookout records');
 
     const nfcResult = await this.verifyNFC(ocrDocument, {
       forceMismatch: isTamperedScenario,
@@ -682,6 +692,7 @@ export class VerificationService {
       ocrFields: ocrResult.fields,
       validationItems: ValidationEngine.toLegacyValidationItems(validationResult),
       issuerItems: IssuerService.toLegacyIssuerItems(issuerResult),
+      referenceComparison: issuerResult.referenceComparison,
       suspiciousElements: TamperingService.toLegacySuspiciousElements(tamperingResult),
       faceMatchScore: faceResult.matchScore,
       faceMatchStatus: faceResult.status === 'PASS' ? 'Faces match' : 'Biometric review required',
@@ -706,6 +717,7 @@ export class VerificationService {
       faceVerification: faceResult,
       nfcVerification: nfcResult,
       referenceComparison: referenceResult,
+      referenceComparisonResult: issuerResult.referenceComparison,
       watchlist: watchlistResult,
       risk: riskResult,
       evidence: [],

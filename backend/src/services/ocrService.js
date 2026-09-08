@@ -40,18 +40,28 @@ class OcrService {
     const fields = (result.fields || []).map((field) => {
       const validation = validationMap.get(field.label);
 
-      let status = 'WARNING';
+      let status = 'PASS';
       if (validation) {
         status = validation.status === 'VALID' ? 'PASS' : 'FAIL';
       } else if (field.status) {
         status = field.status === 'VALID' ? 'PASS' : field.status;
+      } else if (field.confidence !== undefined && field.confidence < 70) {
+        status = 'FAIL';
+      } else if (field.confidence !== undefined && field.confidence < 85) {
+        status = 'WARNING';
       }
+
+      const isValid = validation
+        ? validation.status === 'VALID'
+        : field.status
+        ? field.status === 'VALID'
+        : status === 'PASS';
 
       return {
         label: field.label,
         value: field.value,
         confidence: field.confidence ?? 0,
-        valid: validation ? validation.status === 'VALID' : field.status === 'VALID',
+        valid: isValid,
         status,
         confidenceSource: field.confidenceSource || 'tesseract',
         lowConfidence: field.lowConfidence || false,

@@ -14,7 +14,7 @@ import type {
   TamperingResult,
   FaceResult,
   NfcResult,
-  ReferenceResult,
+  SyntheticReferenceResult,
   WatchlistResult,
 } from '../types';
 
@@ -70,7 +70,10 @@ export class ApiClient {
    * Universal fetch wrapper with authorization and error handling
    */
   public async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    let cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    if (this.baseUrl.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
+      cleanEndpoint = cleanEndpoint.substring(4);
+    }
     const url = `${this.baseUrl}${cleanEndpoint}`;
     const token = this.getToken();
 
@@ -97,12 +100,24 @@ export class ApiClient {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.message || `API Error: ${response.status} ${response.statusText}`);
+        const errorMsg = data.message || `API Error: ${response.status} ${response.statusText}`;
+        console.error('[PRAMAAN][API] Response error:', {
+          url,
+          status: response.status,
+          message: errorMsg,
+        });
+        throw new Error(errorMsg);
       }
 
       return data as T;
-    } catch (error) {
-      console.warn(`[ApiClient] Failed to connect to backend at ${url}.`, error);
+    } catch (error: any) {
+      if (
+        error instanceof TypeError &&
+        (error.message.includes('fetch') || error.message.includes('NetworkError') || error.message.includes('Failed'))
+      ) {
+        console.warn(`[PRAMAAN][API] Failed to connect to backend at ${url}.`, error);
+        throw new Error(`Unable to connect to backend at ${this.baseUrl}. Please verify the Node backend service is running.`);
+      }
       throw error;
     }
   }
@@ -146,7 +161,7 @@ export class ApiClient {
     formData.append('document', file);
     formData.append('documentType', documentType);
 
-    return this.request<{ success: boolean; data: { id: string; url?: string;[key: string]: unknown } }>(
+    return this.request<{ success: boolean; data: { id: string; url?: string; [key: string]: unknown } }>(
       '/documents/upload',
       {
         method: 'POST',
@@ -176,41 +191,63 @@ export class ApiClient {
     if (this.isMock) {
       throw new Error('In mock mode; use VerificationService mock pipeline instead.');
     }
-    return this.request<VerificationResult>('/api/v1/verification', {
+    return this.request<VerificationResult>('/v1/verification', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   }
 
   public async getVerificationById(id: string): Promise<VerificationResult> {
-    return this.request<VerificationResult>(`/api/v1/verification/${encodeURIComponent(id)}`, {
+    return this.request<VerificationResult>(`/v1/verification/${encodeURIComponent(id)}`, {
       method: 'GET',
     });
   }
 
   public async runOcr(file: File, documentType: DocumentType = 'passport'): Promise<OcrResult> {
-    const formData = new FormData();
+    console.log('[PRAMAAN][OCR] Dispatching OCR request:', {
+      url: `${this.baseUrl}/v1/ocr`,
+      documentType,
+      fileName: file.name,
+      fileSize: `${(file.size / 1024).toFixed(1)} KB`,
+    });
 
+    const formData = new FormData();
     formData.append('document', file);
     formData.append('documentType', documentType);
 
-    const response = await this.request<{
-      success: boolean;
-      data: OcrResult;
-      timestamp?: string;
-    }>('/v1/ocr', {
-      method: 'POST',
-      body: formData,
-    });
+    try {
+      const response = await this.request<{
+        success: boolean;
+        data: OcrResult;
+        timestamp?: string;
+      }>('/v1/ocr', {
+        method: 'POST',
+        body: formData,
+      });
 
-    return response.data;
+      console.log('[PRAMAAN][OCR] OCR response received successfully:', {
+        qualityStatus: response.data?.qualityStatus,
+        averageConfidence: response.data?.averageConfidence,
+        fieldsExtracted: response.data?.fields?.length,
+      });
+
+      return response.data;
+    } catch (err: any) {
+      console.error('[PRAMAAN][OCR] Request failed:', {
+        url: `${this.baseUrl}/v1/ocr`,
+        documentType,
+        fileName: file.name,
+        error: err.message,
+      });
+      throw err;
+    }
   }
 
   public async analyzeTampering(payload: {
     image: string;
     documentType: DocumentType;
   }): Promise<TamperingResult> {
-    return this.request<TamperingResult>('/api/v1/tampering', {
+    return this.request<TamperingResult>('/v1/tampering', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -220,7 +257,7 @@ export class ApiClient {
     documentPhoto: string;
     livePhoto: string;
   }): Promise<FaceResult> {
-    return this.request<FaceResult>('/api/v1/face', {
+    return this.request<FaceResult>('/v1/face', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -230,22 +267,24 @@ export class ApiClient {
     printedData: Partial<DocumentData>;
     nfcData: string;
   }): Promise<NfcResult> {
-    return this.request<NfcResult>('/api/v1/nfc/verify', {
+    return this.request<NfcResult>('/v1/nfc/verify', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   }
 
   public async compareReference(payload: {
-    country: string;
-    documentType: DocumentType;
-    documentImage?: string;
-    extractedFields?: Record<string, string>;
-  }): Promise<ReferenceResult> {
-    return this.request<ReferenceResult>('/api/v1/reference/compare', {
+    document?: Partial<DocumentData> & { givenNames?: string; [key: string]: unknown };
+    [key: string]: unknown;
+  }): Promise<SyntheticReferenceResult> {
+    const response = await this.request<{
+      success: boolean;
+      data: SyntheticReferenceResult;
+    }>('/v1/reference/compare', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+    return response.data;
   }
 
   public async checkWatchlist(payload: {
@@ -254,7 +293,7 @@ export class ApiClient {
     dob?: string;
     nationality?: string;
   }): Promise<WatchlistResult> {
-    return this.request<WatchlistResult>('/api/v1/watchlist/check', {
+    return this.request<WatchlistResult>('/v1/watchlist/check', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
