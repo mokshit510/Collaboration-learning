@@ -26,7 +26,38 @@ import cv2
 import numpy as np
 import pytesseract
 
+try:
+    import winocr
+    HAS_WINOCR = True
+except ImportError:
+    HAS_WINOCR = False
+
 logger = logging.getLogger(__name__)
+
+def _is_tesseract_available() -> bool:
+    """Check if pytesseract has a working tesseract executable."""
+    try:
+        pytesseract.get_tesseract_version()
+        return True
+    except Exception:
+        return False
+
+
+def _safe_winocr_recognize(img: np.ndarray) -> dict:
+    """Safely run winocr, handling cases where we are called from within an active asyncio event loop."""
+    try:
+        import asyncio
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(winocr.recognize_cv2_sync, img).result()
+    else:
+        return winocr.recognize_cv2_sync(img)
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -53,9 +84,9 @@ DATE_PATTERN = re.compile(r"\b(\d{1,2})\s*([A-Za-z]{3})\s*(\d{4})\b")
 
 # Multilingual VIZ label tokens to remove if stray label text leaks into value regions
 LABEL_WORDS = {
-    "surname", "nom", "given", "names", "prénoms", "prenoms",
-    "nationality", "nationalité", "nationalite", "date", "of", "birth",
-    "de", "naissance", "sex", "sexe", "place", "lieu", "issue", "délivrance",
+    "surname", "nom", "given", "names", "prénoms", "prenoms", "prnoms",
+    "nationality", "nationalité", "nationalite", "nationalit", "date", "of", "birth",
+    "de", "naissance", "sex", "sexe", "seve", "place", "lieu", "issue", "délivrance",
     "delivrance", "expiry", "d\x27espiration", "d\x27expiration", "expiration",
     "passport", "no", "passeport", "type", "country", "code", "pays"
 }
@@ -309,26 +340,55 @@ def _extract_viz_data(gray: np.ndarray) -> tuple[str, list[OcrField]]:
 
     _save_debug_image("debug_viz.png", v_gray)
 
-    # Backward-compatibility full VIZ text
-    viz_text = _tess_to_str(
-        pytesseract.image_to_string(v_gray, config=TESS_VIZ_CONFIG)
-    ).strip()
+    ocr_source = "tesseract"
+    if _is_tesseract_available():
+        # Backward-compatibility full VIZ text
+        viz_text = _tess_to_str(
+            pytesseract.image_to_string(v_gray, config=TESS_VIZ_CONFIG)
+        ).strip()
 
-    # Run Tesseract word-level analysis on the VIZ region
-    d = pytesseract.image_to_data(v_gray, output_type=pytesseract.Output.DICT)
-    words = []
-    for i in range(len(d["text"])):
-        txt = d["text"][i].strip()
-        conf = float(d["conf"][i])
-        if txt and conf > 0:
-            words.append({
-                "top":    d["top"][i],
-                "left":   d["left"][i],
-                "width":  d["width"][i],
-                "height": d["height"][i],
-                "conf":   conf,
-                "text":   txt
-            })
+        # Run Tesseract word-level analysis on the VIZ region
+        d = pytesseract.image_to_data(v_gray, output_type=pytesseract.Output.DICT)
+        words = []
+        for i in range(len(d["text"])):
+            txt = d["text"][i].strip()
+            conf = float(d["conf"][i])
+            if txt and conf > 0:
+                words.append({
+                    "top":    d["top"][i],
+                    "left":   d["left"][i],
+                    "width":  d["width"][i],
+                    "height": d["height"][i],
+                    "conf":   conf,
+                    "text":   txt
+                })
+    elif HAS_WINOCR:
+        ocr_source = "winocr"
+        res = _safe_winocr_recognize(v_gray)
+        if len(res.get("lines", [])) < 3:
+            res_full = _safe_winocr_recognize(gray)
+            if len(res_full.get("lines", [])) > len(res.get("lines", [])):
+                res = res_full
+        lines_txt = [line["text"] for line in res["lines"]]
+        viz_text = "\n".join(lines_txt).strip()
+        words = []
+        for line in res["lines"]:
+            for w in line["words"]:
+                txt = w["text"].strip()
+                if txt:
+                    rect = w["bounding_rect"]
+                    words.append({
+                        "top":    int(rect["y"]),
+                        "left":   int(rect["x"]),
+                        "width":  int(rect["width"]),
+                        "height": int(rect["height"]),
+                        "conf":   95.0,
+                        "text":   txt
+                    })
+    else:
+        ocr_source = "none"
+        viz_text = ""
+        words = []
 
     # Group words into lines by vertical position
     lines = []
@@ -371,17 +431,25 @@ def _extract_viz_data(gray: np.ndarray) -> tuple[str, list[OcrField]]:
                 fields_dict["Given Names"] = (val_txt.upper(), sum(val_c) / len(val_c) if val_c else 50.0)
 
         # 3. Nationality
-        if "nationalit" in line_text.lower() and idx + 1 < len(lines):
-            val_line = lines[idx + 1]
-            val_words = [w for w in val_line if w["left"] / vgw < 0.65]
-            val_txt = _clean_label_noise(" ".join(w["text"] for w in val_words))
-            val_c = [w["conf"] for w in val_words if w["text"] in val_txt]
-            if val_txt and "Nationality" not in fields_dict:
-                fields_dict["Nationality"] = (val_txt.upper(), sum(val_c) / len(val_c) if val_c else 50.0)
+        if "nationalit" in line_text.lower():
+            same_val = _clean_label_noise(line_text)
+            if same_val and len(same_val) >= 3 and same_val.upper() not in ("NATIONALITY", "NATIONALITE"):
+                fields_dict["Nationality"] = (same_val.upper(), 95.0)
+            elif idx + 1 < len(lines):
+                val_line = lines[idx + 1]
+                val_words = [w for w in val_line if w["left"] / vgw < 0.65]
+                val_txt = _clean_label_noise(" ".join(w["text"] for w in val_words))
+                val_c = [w["conf"] for w in val_words if w["text"] in val_txt]
+                if val_txt and "Nationality" not in fields_dict:
+                    fields_dict["Nationality"] = (val_txt.upper(), sum(val_c) / len(val_c) if val_c else 50.0)
 
         # 4. Date of Birth
-        if ("birth" in line_text.lower() or "naissance" in line_text.lower()) and "place" not in line_text.lower() and "lieu" not in line_text.lower():
-            if idx + 1 < len(lines):
+        if ("birth" in line_text.lower() or "naissance" in line_text.lower() or "girth" in line_text.lower()) and "place" not in line_text.lower() and "lieu" not in line_text.lower():
+            m_same = DATE_PATTERN.search(line_text)
+            if m_same and "Date of Birth" not in fields_dict:
+                d_str = f"{int(m_same.group(1)):02d} {m_same.group(2).upper()} {m_same.group(3)}"
+                fields_dict["Date of Birth"] = (d_str, 95.0)
+            elif idx + 1 < len(lines):
                 val_line = lines[idx + 1]
                 val_words = sorted([w for w in val_line if w["left"] / vgw < 0.65], key=lambda x: x["left"])
                 m = DATE_PATTERN.search(" ".join(w["text"] for w in val_words))
@@ -408,6 +476,15 @@ def _extract_viz_data(gray: np.ndarray) -> tuple[str, list[OcrField]]:
                     fields_dict["Place of Birth"] = (pob_txt.upper(), sum(pob_c) / len(pob_c) if pob_c else 50.0)
 
         # 6. Date of Issue & Date of Expiry
+        if "issue" in line_text.lower() or "délivrance" in line_text.lower() or "delivrance" in line_text.lower():
+            m_issue = DATE_PATTERN.search(line_text)
+            if m_issue and "Date of Issue" not in fields_dict:
+                fields_dict["Date of Issue"] = (f"{int(m_issue.group(1)):02d} {m_issue.group(2).upper()} {m_issue.group(3)}", 95.0)
+        if "expiry" in line_text.lower() or "expiration" in line_text.lower() or "expires" in line_text.lower():
+            m_exp = DATE_PATTERN.search(line_text)
+            if m_exp and "Date of Expiry" not in fields_dict:
+                fields_dict["Date of Expiry"] = (f"{int(m_exp.group(1)):02d} {m_exp.group(2).upper()} {m_exp.group(3)}", 95.0)
+
         if ("issue" in line_text.lower() or "délivrance" in line_text.lower() or "delivrance" in line_text.lower()) and idx + 1 < len(lines):
             val_line = lines[idx + 1]
             left_words = sorted([w for w in val_line if w["left"] / vgw < 0.50], key=lambda x: x["left"])
@@ -424,40 +501,75 @@ def _extract_viz_data(gray: np.ndarray) -> tuple[str, list[OcrField]]:
                 fields_dict["Date of Expiry"] = (d_str, sum(c_list) / len(c_list) if c_list else 50.0)
 
     # 7. Dedicated Header Field Crops (Document Type, Country Code, Passport Number)
-    # Document Type
-    type_crop = v_gray[int(vgh * 0.08):int(vgh * 0.22), :int(vgw * 0.22)]
-    _save_debug_image("debug_viz_type.png", type_crop)
-    d_t = pytesseract.image_to_data(type_crop, config="--psm 6", output_type=pytesseract.Output.DICT)
-    for i in range(len(d_t["text"])):
-        t = d_t["text"][i].strip().upper()
-        c = float(d_t["conf"][i])
-        if t in ("P", "P<") and c > 0:
-            fields_dict["Document Type"] = (t, c)
-            break
-
-    # Country Code
-    cntry_crop = v_gray[int(vgh * 0.08):int(vgh * 0.22), int(vgw * 0.18):int(vgw * 0.52)]
-    _save_debug_image("debug_viz_country.png", cntry_crop)
-    d_c = pytesseract.image_to_data(cntry_crop, config="--psm 6", output_type=pytesseract.Output.DICT)
-    for i in range(len(d_c["text"])):
-        t = d_c["text"][i].strip().upper()
-        c = float(d_c["conf"][i])
-        if t in ("IND", "IND<", "IN") and c > 0:
-            fields_dict["Country Code"] = ("IND" if "IND" in t else t, c)
-            break
-
-    # Passport Number
-    pass_crop = v_gray[int(vgh * 0.08):int(vgh * 0.23), int(vgw * 0.50):]
-    _save_debug_image("debug_viz_passport_number.png", pass_crop)
-    d_p = pytesseract.image_to_data(pass_crop, config="--psm 6", output_type=pytesseract.Output.DICT)
-    for i in range(len(d_p["text"])):
-        t = d_p["text"][i].strip()
-        c = float(d_p["conf"][i])
-        if t and c > 0:
-            m = re.search(r"[A-Z0-9]{8,9}", t)
-            if m and not any(k in t.lower() for k in ["passport", "passeport", "no"]):
-                fields_dict["Passport Number"] = (m.group(0).upper(), c)
+    if _is_tesseract_available():
+        # Document Type
+        type_crop = v_gray[int(vgh * 0.08):int(vgh * 0.22), :int(vgw * 0.22)]
+        _save_debug_image("debug_viz_type.png", type_crop)
+        d_t = pytesseract.image_to_data(type_crop, config="--psm 6", output_type=pytesseract.Output.DICT)
+        for i in range(len(d_t["text"])):
+            t = d_t["text"][i].strip().upper()
+            c = float(d_t["conf"][i])
+            if t in ("P", "P<") and c > 0:
+                fields_dict["Document Type"] = (t, c)
                 break
+
+        # Country Code
+        cntry_crop = v_gray[int(vgh * 0.08):int(vgh * 0.22), int(vgw * 0.18):int(vgw * 0.52)]
+        _save_debug_image("debug_viz_country.png", cntry_crop)
+        d_c = pytesseract.image_to_data(cntry_crop, config="--psm 6", output_type=pytesseract.Output.DICT)
+        for i in range(len(d_c["text"])):
+            t = d_c["text"][i].strip().upper()
+            c = float(d_c["conf"][i])
+            if t in ("IND", "IND<", "IN") and c > 0:
+                fields_dict["Country Code"] = ("IND" if "IND" in t else t, c)
+                break
+
+        # Passport Number
+        pass_crop = v_gray[int(vgh * 0.08):int(vgh * 0.23), int(vgw * 0.50):]
+        _save_debug_image("debug_viz_passport_number.png", pass_crop)
+        d_p = pytesseract.image_to_data(pass_crop, config="--psm 6", output_type=pytesseract.Output.DICT)
+        for i in range(len(d_p["text"])):
+            t = d_p["text"][i].strip()
+            c = float(d_p["conf"][i])
+            if t and c > 0:
+                m = re.search(r"[A-Z0-9]{8,9}", t)
+                if m and not any(k in t.lower() for k in ["passport", "passeport", "no"]):
+                    fields_dict["Passport Number"] = (m.group(0).upper(), c)
+                    break
+    elif HAS_WINOCR:
+        all_lines = viz_text.splitlines()
+        for idx, l in enumerate(all_lines):
+            l_clean = l.strip().upper()
+            l_lower = l.lower()
+            if l_clean in ("P", "P<") and "Document Type" not in fields_dict:
+                fields_dict["Document Type"] = ("P", 95.0)
+            elif any(k in l_lower for k in ["type", "type/type", "type / type"]) and idx + 1 < len(all_lines):
+                val = all_lines[idx + 1].strip().upper()
+                if val.startswith("P"):
+                    fields_dict["Document Type"] = ("P", 95.0)
+            if l_clean in ("IND", "IND<", "IN") and "Country Code" not in fields_dict:
+                fields_dict["Country Code"] = ("IND", 95.0)
+            elif any(k in l_lower for k in ["country", "count t y", "pays"]) and idx + 1 < len(all_lines):
+                m = re.search(r"\b[A-Z]{3}\b", all_lines[idx + 1].upper())
+                if m and "Country Code" not in fields_dict:
+                    fields_dict["Country Code"] = (m.group(0), 95.0)
+            m_p = re.search(r"\b([A-Z][0-9]{7,8})\b", l_clean)
+            if m_p and "Passport Number" not in fields_dict and not any(k in l_lower for k in ["passport", "passeport", "no"]):
+                fields_dict["Passport Number"] = (m_p.group(1), 95.0)
+            elif any(k in l_lower for k in ["passport no", "passeport no", "no.", "pa no"]) and idx + 1 < len(all_lines):
+                m2 = re.search(r"\b([A-Z][0-9]{7,8})\b", all_lines[idx + 1].upper())
+                if m2 and "Passport Number" not in fields_dict:
+                    fields_dict["Passport Number"] = (m2.group(1), 95.0)
+            # Same line Name
+            if "name:" in l_lower or "full name:" in l_lower:
+                val = re.sub(r"^(?:name|full name)\s*:\s*", "", l, flags=re.I).strip()
+                if val:
+                    parts = val.split()
+                    if len(parts) >= 2:
+                        fields_dict["Given Names"] = (" ".join(parts[:-1]).upper(), 95.0)
+                        fields_dict["Surname"] = (parts[-1].upper(), 95.0)
+                    else:
+                        fields_dict["Given Names"] = (val.upper(), 95.0)
 
     # Save debug crops for other fields
     _save_debug_image("debug_viz_name.png", v_gray[int(vgh*0.20):int(vgh*0.45), :int(vgw*0.65)])
@@ -478,7 +590,7 @@ def _extract_viz_data(gray: np.ndarray) -> tuple[str, list[OcrField]]:
                 label=label,
                 value=val,
                 confidence=conf,
-                confidence_source="tesseract",
+                confidence_source=ocr_source,
                 low_confidence=conf < LOW_CONF_THRESHOLD,
             ))
 
@@ -505,10 +617,38 @@ def _extract_mrz(gray: np.ndarray) -> tuple[str, list[str]]:
     _, mrz_bin = cv2.threshold(mrz_crop, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     _save_debug_image("debug_mrz.png", mrz_bin)
 
-    mrz_raw: str = _tess_to_str(
-        pytesseract.image_to_string(mrz_bin, config=TESS_MRZ_CONFIG)
-    )
-    mrz_lines = normalize_mrz(mrz_raw)
+    mrz_raw = ""
+    mrz_lines = []
+    if _is_tesseract_available():
+        mrz_raw = _tess_to_str(
+            pytesseract.image_to_string(mrz_bin, config=TESS_MRZ_CONFIG)
+        )
+        mrz_lines = normalize_mrz(mrz_raw)
+    elif HAS_WINOCR:
+        try:
+            res = _safe_winocr_recognize(mrz_bin)
+            mrz_raw = "\n".join(l["text"] for l in res["lines"]).strip()
+            mrz_lines = normalize_mrz(mrz_raw)
+        except Exception:
+            pass
+        if not mrz_lines:
+            try:
+                res2 = _safe_winocr_recognize(mrz_crop)
+                raw2 = "\n".join(l["text"] for l in res2["lines"]).strip()
+                mrz_lines = normalize_mrz(raw2)
+                if mrz_lines:
+                    mrz_raw = raw2
+            except Exception:
+                pass
+        if not mrz_lines:
+            try:
+                res3 = _safe_winocr_recognize(gray)
+                raw3 = "\n".join(l["text"] for l in res3["lines"]).strip()
+                mrz_lines = normalize_mrz(raw3)
+                if mrz_lines:
+                    mrz_raw = raw3
+            except Exception:
+                pass
 
     return mrz_raw.strip(), mrz_lines
 
@@ -583,13 +723,13 @@ def normalize_mrz(raw: str) -> list[str]:
                     score += 5
             if len(seg) >= 19:
                 score += sum(2 for c in seg[13:19] if c.isdigit())
-                if seg[19].isdigit():
+                if len(seg) > 19 and seg[19].isdigit():
                     score += 3
             if len(seg) >= 21 and seg[20] in ("M", "F", "<", "X"):
                 score += 4
             if len(seg) >= 27:
                 score += sum(2 for c in seg[21:27] if c.isdigit())
-                if seg[27].isdigit():
+                if len(seg) > 27 and seg[27].isdigit():
                     score += 3
             if len(seg) >= 10 and seg[9].isdigit():
                 score += 3

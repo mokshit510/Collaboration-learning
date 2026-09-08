@@ -17,12 +17,26 @@ export interface UploadedDocument {
 export type PipelineStepId = 
   | 'upload' 
   | 'ocr' 
+  | 'nfc'
   | 'validation' 
   | 'issuer' 
   | 'tampering' 
   | 'face' 
   | 'risk' 
   | 'complete';
+
+export interface MobileSessionState {
+  sessionId: string;
+  createdAt: string;
+  phoneConnected: boolean;
+  lastPhonePing?: string | null;
+  deviceInfo?: Record<string, unknown> | null;
+  currentStage: number;
+  stageName: string;
+  faceCaptureRequested?: boolean;
+  nfcResult?: NfcResult | null;
+  faceResult?: FaceResult | null;
+}
 
 export type PipelineStepStatus = 'NOT_STARTED' | 'PROCESSING' | 'COMPLETED' | 'WARNING' | 'FAILED';
 
@@ -282,6 +296,7 @@ export interface FaceResult {
   liveFaceDetected: boolean;
   status: 'PASS' | 'REVIEW' | 'FAIL';
   statusExplanation: string;
+  livePhotoUrl?: string;
 }
 
 export interface NfcCredentialPayload {

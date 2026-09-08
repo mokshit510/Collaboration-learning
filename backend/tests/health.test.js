@@ -56,15 +56,10 @@ const server = app.listen(0, async () => {
     console.log('\n========================================================');
     console.log(' ALL PHASE 2 HEALTH & SKELETON VERIFICATIONS PASSED! ');
     console.log('========================================================\n');
-
-    server.close(() => {
-      console.log('[Test] Test server shut down cleanly.');
-      process.exit(0);
-    });
   } catch (err) {
     console.error('❌ Test failed with error:', err);
-    server.close(() => {
-      process.exit(1);
-    });
+    process.exitCode = 1;
+  } finally {
+    server.close();
   }
 });

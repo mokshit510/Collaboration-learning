@@ -6,9 +6,10 @@ import config from '../config/env.js';
  */
 export const standardLimiter = rateLimit({
   windowMs: config.rateLimit.windowMs, // 15 minutes default
-  max: config.rateLimit.max, // 100 requests default
+  max: config.isProduction ? config.rateLimit.max : 10000,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => !config.isProduction,
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again after 15 minutes',

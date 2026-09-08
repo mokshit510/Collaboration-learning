@@ -24,11 +24,12 @@ export const PipelineProgress: React.FC<PipelineProgressProps> = ({
   const steps = [
     { number: 1, label: 'Document Upload' },
     { number: 2, label: 'OCR Extraction' },
-    { number: 3, label: 'Validation' },
-    { number: 4, label: 'Issuer Verification' },
-    { number: 5, label: 'Tampering Analysis' },
-    { number: 6, label: 'Face Verification' },
-    { number: 7, label: 'Complete' },
+    { number: 3, label: 'NFC Input (Phone)' },
+    { number: 4, label: 'Document Validation' },
+    { number: 5, label: 'Issuer + Tampering' },
+    { number: 6, label: 'Face Input (Phone)' },
+    { number: 7, label: 'Risk Assessment' },
+    { number: 8, label: 'Complete' },
   ];
 
   const getStepStatus = (stepNumber: number): PipelineStepStatus => {
@@ -36,7 +37,7 @@ export const PipelineProgress: React.FC<PipelineProgressProps> = ({
       return stepStates[stepNumber];
     }
     // Fallback based on currentStep
-    if (currentStep > stepNumber || (currentStep === 7 && stepNumber === 7)) {
+    if (currentStep > stepNumber || (currentStep === 8 && stepNumber === 8)) {
       return 'COMPLETED';
     }
     if (currentStep === stepNumber && isSimulating) {

@@ -52,63 +52,65 @@ PRAMAAN delivers a complete dual-portal verification architecture:
 
 ---
 
-## 6. Verification Pipeline
-The verification flow strictly enforces evidence-based correlation:
+## 6. Verification Pipeline (8 Sequential Stages)
+The verification pipeline follows an exact 8-stage sequential workflow where **Stage 3 (NFC Input)** and **Stage 6 (Face Input)** operate as real pipeline gates awaiting input from a connected mobile phone:
 
 ```mermaid
 graph TD
-    A[Document Upload / Camera Scan] --> B[1. Optical OCR Extraction]
-    B --> C[2. Document Validation & ICAO 9303 Checksums]
-    C --> D[3. Issuer Verification - Simulated]
-    D --> E[4. AI Tampering Forensics & Artifact Analysis]
-    E --> F[5. Biometric Face Verification & Liveness]
-    F --> G[6. NFC Prototype Credential Cross-Check]
-    G --> H[7. Specimen Reference Comparison - PRADO-Style]
-    H --> I[8. Watchlist & Lookout Screening]
-    I --> J[Evidence Fusion Engine]
-    J --> K[Explainable Risk Engine]
-    K --> L[Investigator Decision: Clear / Flag / Save]
-    L --> M[Tamper-Evident Audit Trail & Record Archive]
+    A[1. Document Upload] --> B[2. OCR Extraction]
+    B --> C{3. NFC Input Gate\nPhone-Based}
+    C -->|NFC Ingested| D[4. Document Validation & Checksums]
+    D --> E[5. Issuer + Tampering Forensics]
+    E --> F{6. Face Input Gate\nPhone Live Camera}
+    F -->|Biometrics Received| G[7. Evidence Fusion & Risk Engine]
+    G --> H[8. Verification Complete & Final Verdict]
 ```
+
+1. **Stage 1 — Document Upload:** Optical document image ingestion at 300 DPI.
+2. **Stage 2 — OCR Extraction:** Visual zone text parsing and MRZ parsing with character confidence scoring.
+3. **Stage 3 — NFC Input (From Phone) [GATE]:** Pipeline pauses until NFC chip credential payload is transmitted from a connected phone (`POST /api/v1/nfc/verify`). Cross-verifies chip vs printed optical fields.
+4. **Stage 4 — Document Validation:** ICAO 9303 checksum arithmetic, date consistency, and chronology checks.
+5. **Stage 5 — Issuer + Tampering Analysis:** Query synthetic issuer database and AI vision tampering detection.
+6. **Stage 6 — Face Input (From Phone) [GATE]:** Pipeline pauses until live portrait is captured via connected mobile phone camera (`POST /api/v1/face/verify`). Compares face against document photo and verifies active liveness.
+7. **Stage 7 — Evidence Fusion + Risk Assessment:** Correlates all 8 forensic vectors and executes mathematical risk engine.
+8. **Stage 8 — Verification Complete:** Generates final risk score (0–100), verdict (PASSED / REVIEW / FLAGGED), and evidence dossier.
 
 ---
 
-## 7. System Architecture
+## 7. System Architecture (Multi-Device LAN Mesh)
 ```mermaid
-flowchart LR
-    subgraph ClientLayer ["Frontend (Investigator & Authority Portals)"]
-        UI[React 19 + Tailwind UI]
-        Console[Investigator Console]
-        AuthDash[Authority Dashboard]
-        APIClient[ApiClient - Mock / API Toggle]
+flowchart TB
+    subgraph DesktopLayer ["Investigator Desktop Console (Port 5173)"]
+        Console["Investigator Console UI\n(React 19 + Tailwind v4)"]
+        Prog["8-Stage Pipeline Coordinator\n(Stage 3 & 6 Pause Gates)"]
+        Engines["Forensic Engines\n(OCR, Validation, Issuer, Tampering, Fusion, Risk)"]
+        AuthDash["Supervisory Authority Dashboard"]
     end
 
-    subgraph ServiceLayer ["PRAMAAN Modular Verification Engines"]
-        OCR[OcrEngine]
-        Val[ValidationEngine]
-        Issuer[IssuerService Adapter]
-        Tamper[TamperingService Adapter]
-        Face[FaceService]
-        NFC[NfcService Adapter]
-        Ref[ReferenceEngine]
-        Watch[WatchlistService]
-        Fusion[EvidenceFusion]
-        Risk[RiskEngine]
-        Store[RecordsStorage - Local]
+    subgraph MobileLayer ["Mobile Web Companion (Port 5174)"]
+        PhoneUI["Phone-First Companion UI\n(Responsive Touch Viewport)"]
+        NfcUI["Stage 3 NFC Gate Handler\n(Web NFC / Signed Chip Payload)"]
+        FaceUI["Stage 6 Face Camera Handler\n(getUserMedia Video + Oval Reticle)"]
+        Heartbeat["Device Heartbeat Poller\n(Every 1.8s)"]
     end
 
-    subgraph BackendLayer ["Backend & AI Integration Points (Pluggable)"]
-        FastAPI["FastAPI / Node Backend (apiClient.ts)"]
-        Torch["PyTorch / Vision Transformer Model"]
-        GovDB["Authorized Consular / Issuer API"]
+    subgraph BackendLayer ["PRAMAAN Backend & Session Coordinator (Port 5000)"]
+        SessionServ["Session Service\n(PRM-YYYYMMDD-XXXX & Gate State)"]
+        NfcServ["NFC Verification Service\n(Integrity Hash & Cross-Checks)"]
+        FaceServ["Biometric Face Service\n(Landmarks & Active Liveness)"]
+        DocServ["Document Storage & Audit Log"]
     end
 
-    UI --> Console
-    UI --> AuthDash
-    Console --> APIClient
-    AuthDash --> Store
-    APIClient --> ServiceLayer
-    ServiceLayer -.->|When VITE_USE_MOCK=false| BackendLayer
+    PhoneUI -->|Heartbeat POST| SessionServ
+    NfcUI -->|POST /api/v1/nfc/verify| NfcServ
+    FaceUI -->|POST /api/v1/face/verify| FaceServ
+
+    Console -->|Poll Session & Gate State| SessionServ
+    Console -->|Fetch Latest Chip Result| NfcServ
+    Console -->|Fetch Latest Face Result| FaceServ
+    Console --> Engines
+    Engines -->|Evidence Correlation Graph| Console
+    AuthDash --> DocServ
 ```
 
 ---
@@ -137,17 +139,31 @@ $$\text{TamperingService} \longrightarrow \text{Baseline Analyzer (Heuristics)} 
 
 ---
 
-## 10. NFC Prototype
-* **Designation:** Secure NFC Document Credential — Demonstration Module.
-* **Concept:** Demonstrates offline verification where an embedded NFC credential payload is cryptographically authenticated and cross-referenced with optical OCR text.
-* **Anomaly Detection:** If printed text has been forged (e.g., printed DOB reads `14/02/1999`, but the digitally signed chip payload records `14/02/1998`), the system raises a critical `NFC CROSS-VERIFICATION MISMATCH` warning.
-* **Integrity:** Validates cryptographic SHA-256 integrity hashes against simulated offline trust anchors without exposing private keys in client code.
-
-*Status: Implemented as clean prototype adapter.*
+## 10. NFC Credential Input & Cross-Verification (Stage 3 Gate)
+* **Designation:** NFC-Based Prototype Credential Verification (Frontline Gate).
+* **Pipeline Behavior:** The verification pipeline strictly **pauses** at Stage 3 until physical or simulated chip data is transmitted from a connected mobile device.
+* **Phone Integration:**
+  * **Web NFC Hardware Scanning:** Android Chrome users can tap a physical NFC tag (`NDEFReader.scan()`) to transmit live chip serial and records.
+  * **One-Tap Prototype Payload:** Companion provides 1-tap transmission of genuine and tampered test credentials signed with public trust anchors.
+  * **Endpoint:** `POST /api/v1/nfc/verify` correlates chip data against optical OCR text.
+* **Anomaly Detection:** If printed optical text has been altered (e.g., printed DOB reads `14/02/1999`, but the digitally signed chip records `14/02/1998`), the system raises an `NFC CROSS-VERIFICATION MISMATCH` warning (+20 risk score).
+* **Cryptographic Integrity:** Validates SHA-256 integrity hashes without exposing private keys.
 
 ---
 
-## 11. Document Reference Engine
+## 11. Biometric Face Verification & Live Mobile Camera (Stage 6 Gate)
+* **Designation:** Live Mobile Camera Biometric Verification (Frontline Gate).
+* **Pipeline Behavior:** The verification pipeline strictly **pauses** at Stage 6 until a live facial portrait is captured on the connected phone.
+* **Phone Integration:**
+  * **Live Viewfinder:** Employs `navigator.mediaDevices.getUserMedia` with front-facing camera (`facingMode: 'user'`).
+  * **Visual Guidance:** Displays a live oval face guideline overlay and lighting instructions.
+  * **Biometric Extraction:** Captures video frame to canvas, converts to high-resolution JPEG, and posts to `POST /api/v1/face/verify`.
+  * **Fallbacks:** Includes mobile file picker camera fallback (`<input type="file" capture="user">`) and one-tap biometric likeness testing for non-HTTPS local networks.
+* **Forensics Evaluated:** 68-point facial landmark distance vectors against document portrait photo and active liveness verification (`PASS` / `REVIEW` / `FAIL`).
+
+---
+
+## 12. Document Reference Engine
 * **Designation:** PRADO-Style Document Reference Comparison.
 * **Functionality:** Compares an uploaded document against authentic specimen baseline profiles:
   * Republic of India (`IND`): Passport (Series P TD3) & Consular Visa Sticker.
@@ -160,7 +176,7 @@ $$\text{TamperingService} \longrightarrow \text{Baseline Analyzer (Heuristics)} 
 
 ---
 
-## 12. Issuer Verification
+## 13. Issuer Verification (Simulated)
 * **Designation:** Simulated Issuer Verification Service.
 * **Scope:** Simulates document existence checks, status lookups (`ACTIVE`, `EXPIRED`, `REVOKED`), blacklist screenings, and digital signature authentication.
 * **Disclaimer:** Explicitly labeled in the UI as *Simulated Issuer Data — not a live government database*.
@@ -170,7 +186,7 @@ $$\text{TamperingService} \longrightarrow \text{Baseline Analyzer (Heuristics)} 
 
 ---
 
-## 13. Evidence Fusion
+## 14. Evidence Fusion
 Combines all 8 verification vectors into a unified evidence graph:
 | Vector | Status | Impact Weight | Technical Finding |
 |---|---|---|---|
@@ -185,7 +201,7 @@ Combines all 8 verification vectors into a unified evidence graph:
 
 ---
 
-## 14. Risk Scoring
+## 15. Risk Scoring
 * **Range:** 0 to 100
 * **Levels:**
   * `0 – 29`: **LOW RISK** (Likely clear — Standard processing)
@@ -195,7 +211,7 @@ Combines all 8 verification vectors into a unified evidence graph:
 
 ---
 
-## 15. Investigator Workflow
+## 16. Investigator Workflow
 1. **Capture / Select:** Upload scanned image, capture via optical camera scan modal, or select a demo scenario.
 2. **Automated Analysis:** Click **Run Pipeline**; the 8-stage sequence executes with real-time audit logging.
 3. **Inspect Anomalies:** Review highlighted bounding boxes on document view and inspect suspicious elements.
@@ -207,7 +223,7 @@ Combines all 8 verification vectors into a unified evidence graph:
 
 ---
 
-## 16. Authority Dashboard
+## 17. Authority Dashboard
 Dedicated supervisory portal providing strategic border intelligence:
 * **KPI Metrics:** Total Verifications, High-Risk Cases, Active Investigators, Cleared Documents.
 * **Visual Analytics:** 7-day Verification Trends chart, Risk Distribution donut, Document Types ratio.
@@ -218,129 +234,219 @@ Dedicated supervisory portal providing strategic border intelligence:
 
 ---
 
-## 17. Project Structure
+## 18. Project Structure
 ```
 c:\Pramaan\
-├── README.md                      # Root project documentation
-├── package.json                   # Root package definition
-└── frontend/
-    ├── README.md                  # Frontend documentation
-    ├── index.html                 # HTML5 entry point
-    ├── vite.config.ts             # Vite 8 configuration
-    ├── package.json               # Dependencies and scripts
-    ├── tsconfig.json              # TypeScript root config
-    ├── .oxlintrc.json             # Oxlint rules
-    ├── .env.example               # Environment variables template
-    └── src/
-        ├── main.tsx               # React application root
-        ├── App.tsx                # Investigator Console & Portal Router
-        ├── App.css / index.css    # Design tokens & styling
-        ├── types/                 # Central TypeScript type definitions
-        │   ├── index.ts           # VerificationResult, DocumentData, etc.
-        │   └── authority.ts       # Authority analytics types
-        ├── services/              # Modular verification engines
-        │   ├── apiClient.ts       # Backend REST client (Mock/API toggle)
-        │   ├── verificationService.ts # Central orchestration facade
-        │   ├── ocrEngine.ts       # Optical character & MRZ extraction
-        │   ├── validationEngine.ts # ICAO 9303 checksums & rule validation
-        │   ├── issuerService.ts   # Simulated issuer adapter
-        │   ├── tamperingService.ts # AI tampering baseline adapter
-        │   ├── faceService.ts     # Biometric face matching & liveness
-        │   ├── nfcService.ts      # Prototype NFC credential verification
-        │   ├── referenceEngine.ts # PRADO specimen reference comparison
-        │   ├── watchlistService.ts # Lookout Circular (LOC) screening
-        │   ├── evidenceFusion.ts  # Multi-vector evidence fusion
-        │   ├── riskEngine.ts      # Configurable weighted risk engine
-        │   └── recordsStorage.ts  # Persisted records repository
-        ├── data/                  # Mock data & demonstration scenarios
-        │   ├── demoScenarios.ts   # 5 selectable demo scenarios
-        │   ├── mockVerificationData.ts # Specimen documents (Passport, Visa)
-        │   └── authorityData.ts   # Authority portal statistics & feeds
-        ├── pages/
-        │   └── AuthorityDashboard.tsx # Supervisory authority command center
-        └── components/            # UI components
-            ├── PipelineProgress.tsx      # 8-step data-driven pipeline timeline
-            ├── DocumentUploadCard.tsx    # Upload & scenario selector
-            ├── PassportDocumentView.tsx  # Document visualizer & tamper overlay
-            ├── OcrExtractionCard.tsx     # Extracted OCR fields & confidence
-            ├── DocumentValidationCard.tsx # Validation check rules
-            ├── IssuerVerificationCard.tsx # Issuer status card
-            ├── TamperingAnalysisCard.tsx  # AI forensic analysis card
-            ├── FaceVerificationCard.tsx   # Facial match card
-            ├── RiskAssessmentCard.tsx    # Semi-circular risk gauge
-            ├── AiSummaryCard.tsx         # Concise natural-language summary
-            ├── ActionButtons.tsx         # Save, Flag, Clear controls
-            ├── DetailedReportModal.tsx   # Multi-tab forensic dossier
-            ├── CameraScanModal.tsx       # Live camera scanning viewfinder
-            ├── PastRecordsModal.tsx      # Archived records browser
-            ├── Toast.tsx                 # Notification alerts
-            ├── Sidebar.tsx / Header.tsx  # Layout components
-            └── authority/                # Authority dashboard widgets
+├── README.md                      # Unified platform documentation
+├── backend/                       # Express 5 REST API & Multi-Device Session Coordinator
+│   ├── package.json               # Backend dependencies & npm test scripts
+│   ├── src/
+│   │   ├── server.js              # Server bootstrapper (Port 5000)
+│   │   ├── app.js                 # Express application & CORS configuration
+│   │   ├── config/                # Environment configuration
+│   │   ├── controllers/
+│   │   │   ├── sessionController.js # Session state & heartbeat endpoints
+│   │   │   ├── nfcController.js     # NFC credential verification & cross-checks
+│   │   │   ├── faceController.js    # Biometric likeness & liveness analysis
+│   │   │   ├── documentController.js# Document upload & retrieval
+│   │   │   └── authController.js    # JWT authentication for officers
+│   │   ├── services/
+│   │   │   ├── sessionService.js    # In-memory session coordinator
+│   │   │   ├── nfcService.js        # Prototype NFC verification logic
+│   │   │   ├── faceService.js       # Face likeness & liveness algorithms
+│   │   │   └── storageService.js    # Local & Supabase storage adapter
+│   │   ├── routes/                  # REST route definitions (/api/v1/*)
+│   │   └── middlewares/             # Auth, error, and rate-limiting handlers
+│   └── tests/
+│       ├── health.test.js         # Health & SHA-256 HMAC integrity tests
+│       ├── integration.test.js    # Auth & document upload integration tests
+│       └── pipeline_gates.test.js # Stage 3 NFC & Stage 6 Face gate tests
+├── frontend/                      # Desktop Investigator Console & Authority Dashboard
+│   ├── index.html                 # HTML5 entry point
+│   ├── vite.config.ts             # Vite 8 configuration (Port 5173, host: 0.0.0.0)
+│   ├── package.json               # Dependencies and scripts
+│   ├── tsconfig.json              # TypeScript root config
+│   ├── .oxlintrc.json             # Oxlint configuration
+│   └── src/
+│       ├── main.tsx               # React application root
+│       ├── App.tsx                # 8-stage sequential pipeline runner & router
+│       ├── App.css / index.css    # Design tokens & styling
+│       ├── types/                 # Central TypeScript type definitions
+│       ├── services/              # Forensic verification engines
+│       │   ├── apiClient.ts       # Backend REST client & session sync
+│       │   ├── verificationService.ts # Central orchestration facade
+│       │   ├── ocrEngine.ts       # Optical character & MRZ extraction
+│       │   ├── validationEngine.ts # ICAO 9303 checksums & rule validation
+│       │   ├── issuerService.ts   # Simulated issuer adapter
+│       │   ├── tamperingService.ts # AI tampering baseline adapter
+│       │   ├── faceService.ts     # Biometric face matching & liveness
+│       │   ├── nfcService.ts      # Prototype NFC credential verification
+│       │   ├── evidenceFusion.ts  # Multi-vector evidence fusion
+│       │   └── riskEngine.ts      # Configurable weighted risk engine
+│       ├── data/                  # Mock data & 5 demonstration scenarios
+│       ├── pages/
+│       │   └── AuthorityDashboard.tsx # Supervisory command center
+│       └── components/            # UI components
+│           ├── PipelineProgress.tsx      # 8-step pipeline timeline
+│           ├── DocumentUploadCard.tsx    # Upload & scenario selector
+│           ├── OcrExtractionCard.tsx     # Extracted OCR fields & confidence
+│           ├── NfcVerificationCard.tsx   # Stage 3 NFC gate card
+│           ├── DocumentValidationCard.tsx # Validation check rules
+│           ├── IssuerVerificationCard.tsx # Issuer status card
+│           ├── TamperingAnalysisCard.tsx  # AI forensic analysis card
+│           ├── FaceVerificationCard.tsx   # Stage 6 Face biometric card
+│           ├── RiskAssessmentCard.tsx    # Semi-circular risk gauge
+│           ├── AiSummaryCard.tsx         # Concise natural-language summary
+│           ├── DetailedReportModal.tsx   # Multi-tab forensic dossier
+│           └── PastRecordsModal.tsx      # Archived records browser
+└── mobile-web/                    # Phone-First Mobile Web Companion
+    ├── index.html                 # Mobile-optimized viewport entry
+    ├── vite.config.ts             # Vite 8 configuration (Port 5174, host: 0.0.0.0)
+    ├── package.json               # Companion dependencies
+    ├── tsconfig.json              # TypeScript configuration
+        ├── main.tsx               # Companion application root
+        ├── App.tsx                # Dynamic 8-stage mobile flow & heartbeat
+        ├── index.css              # Custom radar, scanline & oval reticle styling
+        ├── services/
+        │   └── api.ts             # Backend communication & session polling
+        └── components/
+            ├── Header.tsx         # PRAMAAN Mobile header & connection pulse
+            ├── SettingsModal.tsx  # Backend IP config & session selector
+            ├── StatusTimeline.tsx # Visual 8-step timeline with gate markers
+            ├── NfcScreen.tsx      # Stage 3 NFC reader (Web NFC + 1-tap chip)
+            └── FaceCameraScreen.tsx # Stage 6 live camera capture (getUserMedia)
 ```
 
 ---
 
-## 18. Technology Stack
-Actual dependencies verified from `package.json`:
-* **Core:** React 19.2.8 (`react`, `react-dom`)
-* **Language:** TypeScript 6.0 (`typescript`)
-* **Build Tool:** Vite 8.2.2 (`vite`, `@vitejs/plugin-react`)
-* **Styling:** Tailwind CSS 4.3.3 (`tailwindcss`, `@tailwindcss/vite`)
-* **Iconography:** Lucide React 1.41.0 (`lucide-react`)
-* **Visual Effects:** Canvas Confetti 1.9.4 (`canvas-confetti`)
-* **Linter:** Oxlint 1.79.0 (`oxlint`)
+## 19. Technology Stack
+* **Investigator Desktop Console (`frontend/`):**
+  * React 19.2.8 (`react`, `react-dom`)
+  * TypeScript 6.0 (`typescript`)
+  * Vite 8.2.2 (`vite`, `@vitejs/plugin-react`)
+  * Tailwind CSS 4.3.3 (`tailwindcss`, `@tailwindcss/vite`)
+  * Lucide React 1.41.0 (`lucide-react`)
+  * Canvas Confetti 1.9.4 (`canvas-confetti`)
+  * Oxlint 1.79.0 (`oxlint`)
+* **Mobile Web Companion (`mobile-web/`):**
+  * React 19.2.8 (`react`, `react-dom`)
+  * TypeScript 6.0 (`typescript`)
+  * Vite 8.2.2 (`vite`, `@vitejs/plugin-react`)
+  * Tailwind CSS 4.3.3 (`tailwindcss`, `@tailwindcss/vite`)
+  * Lucide React 1.41.0 (`lucide-react`)
+  * Web NFC API (`NDEFReader`) for hardware chip reading
+  * MediaDevices Camera API (`navigator.mediaDevices.getUserMedia`)
+* **Backend API & Session Coordinator (`backend/`):**
+  * Node.js v24 (ES Modules)
+  * Express 5.2.1 (`express`)
+  * Express Rate Limit 8.7.0 (`express-rate-limit`)
+  * Helmet 8.3.0 (`helmet`)
+  * CORS 2.8.6 (`cors`)
+  * Multer 2.3.0 (`multer`) for secure multipart document uploads
+  * Supabase Client 2.115.0 (`@supabase/supabase-js`)
+  * Axios 1.20.0 (`axios`)
+  * UUID 14.0.2 (`uuid`)
 
 ---
 
-## 19. Installation
+## 20. REST API Reference (Multi-Device Coordination)
+The backend acts as the single source of truth for pipeline sessions and gate inputs:
+
+### Session Coordination
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/session/current` | Retrieve the active verification session and connection state |
+| `POST` | `/api/v1/session/init` | Create or reset a new session ID (`PRM-YYYYMMDD-XXXX`) |
+| `GET` | `/api/v1/session/:sessionId` | Poll full session status, stage, document metadata, and gate results |
+| `POST` | `/api/v1/session/:sessionId/heartbeat` | Mobile device heartbeat (updates `phoneConnected: true`) |
+| `POST` | `/api/v1/session/:sessionId/stage` | Desktop updates current stage (1–8) and status flags |
+| `POST` | `/api/v1/session/:sessionId/request-face` | Broadcast signal to phone to activate live camera |
+| `POST` | `/api/v1/session/:sessionId/reset` | Clear active session state |
+
+### Stage 3 NFC Gate
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/v1/nfc/verify` | Ingest chip data from phone, cross-verify vs printed fields, and store result |
+| `GET` | `/api/v1/nfc/latest?sessionId=...` | Poll latest NFC verification result for desktop console |
+
+### Stage 6 Face Gate
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/v1/face/verify` | Ingest live camera photo from phone, execute likeness & liveness scoring |
+| `GET` | `/api/v1/face/latest?sessionId=...` | Poll latest Face verification result for desktop console |
+
+---
+
+## 21. Installation
 Prerequisites: Node.js (v18+ recommended) and npm.
 
 ```bash
 # Clone the repository
 git clone https://github.com/mokshit510/Collaboration-learning.git
-cd Collaboration-learning/frontend
+cd Collaboration-learning
 
-# Install dependencies
-npm install
+# 1. Install Backend dependencies
+cd backend && npm install && cd ..
+
+# 2. Install Desktop Frontend dependencies
+cd frontend && npm install && cd ..
+
+# 3. Install Mobile Web Companion dependencies
+cd mobile-web && npm install && cd ..
 ```
 
 ---
 
-## 20. Running Locally
+## 22. Running Locally & Over LAN
+For the complete 8-stage verification with phone-based NFC and Face gates, run the three services concurrently:
+
 ```bash
-# Start local Vite development server
+# Terminal 1: PRAMAAN Backend (Session, NFC & Face APIs)
+cd backend
 npm run dev
+# Running on http://0.0.0.0:5000
 
-# Build production bundle with TypeScript verification
-npm run build
+# Terminal 2: Investigator Desktop Console
+cd frontend
+npm run dev
+# Running on http://0.0.0.0:5173
 
-# Run Oxlint code analysis
-npm run lint
+# Terminal 3: Mobile Web Companion (Phone NFC & Face Input)
+cd mobile-web
+npm run dev
+# Running on http://0.0.0.0:5174
 ```
+
+### Accessing From Mobile Phone
+Connect your mobile device to the same Wi-Fi network as your workstation:
+1. Open `http://<YOUR_LOCAL_IP>:5174` (e.g. `http://192.168.166.12:5174`) in your mobile browser.
+2. In the Mobile Companion, confirm the backend address (default is `http://<YOUR_LOCAL_IP>:5000`).
+3. As the desktop console runs Stage 1 & 2, the phone automatically updates to **Stage 3 (NFC Input)** and prompts for chip read or 1-tap transmission.
+4. After Stage 4 & 5 complete on desktop, the phone automatically activates **Stage 6 (Live Face Camera)** to capture biometrics and complete the pipeline.
 
 ---
 
-## 21. Environment Variables
+## 23. Environment Variables
 Create a `.env` file in `frontend/` (see `.env.example`):
 ```ini
 # Toggle between standalone demo mode and backend integration
 VITE_USE_MOCK=true
 
 # Remote backend API Base URL (used when VITE_USE_MOCK=false)
-VITE_API_BASE_URL=http://localhost:8000
+VITE_API_BASE_URL=http://localhost:5000
 ```
 
 ---
 
-## 22. Mock Mode
+## 24. Mock Mode vs Live Backend Mode
 * **When `VITE_USE_MOCK=true` (Default):**
   PRAMAAN operates autonomously using local modular engines (`OcrEngine`, `ValidationEngine`, `BaselineTamperingAnalyzer`, `MockNfcAdapter`, `ReferenceEngine`, `WatchlistService`). No external server is required.
 * **When `VITE_USE_MOCK=false`:**
-  `apiClient.ts` dispatches requests to backend endpoints (`/api/v1/verification`, `/api/v1/ocr`, `/api/v1/tampering`, etc.).
+  `apiClient.ts` dispatches requests to backend endpoints (`/api/v1/session`, `/api/v1/nfc`, `/api/v1/face`, `/api/v1/documents`).
 
 ---
 
-## 23. Demo Scenarios
+## 25. Demo Scenarios
 PRAMAAN includes 5 realistic scenarios selectable directly from the **Scenario Selector** dropdown in the Document Upload card:
 1. **Scenario 1: Genuine Document (LOW RISK)**
    * All checks pass, 96% biometric likeness, identical NFC chip data, no anomalies detected. Final Risk: ~12/100 (LOW).
@@ -355,7 +461,7 @@ PRAMAAN includes 5 realistic scenarios selectable directly from the **Scenario S
 
 ---
 
-## 24. Security & Privacy
+## 26. Security & Privacy
 * **Zero PII Exposure:** Document numbers are masked in all lists (`T123****`).
 * **Cryptographic Security:** NFC credentials verify public trust anchors without bundling private keys.
 * **Environment Protection:** `.env`, `.env.*`, keys, and tokens are strictly excluded in `.gitignore`.
@@ -363,14 +469,14 @@ PRAMAAN includes 5 realistic scenarios selectable directly from the **Scenario S
 
 ---
 
-## 25. Current Limitations
+## 27. Current Limitations
 * NFC module uses a web simulation adapter; physical NFC reading requires WebNFC API in supported Chromium browsers with compatible hardware.
 * Optical character recognition in standalone mock mode uses local parsed streams; deep non-standard handwriting requires connection to backend OCR model.
 * Issuer and Watchlist checks are simulated and do not query production government databases.
 
 ---
 
-## 26. Future Scope
+## 28. Future Scope
 * **Hardware Integration:** Integration with dedicated 3M / Thales full-page passport scanners and smart card readers.
 * **Edge Inference:** Deployment of lightweight quantized Vision Transformer (ViT) tampering models directly on edge checkpoint terminals.
 * **Consular Blockchain:** Consortium permissioned ledger for cross-border tamper-proof credential issuance.
@@ -378,17 +484,17 @@ PRAMAAN includes 5 realistic scenarios selectable directly from the **Scenario S
 
 ---
 
-## 27. Team Roles & Integration Guidelines
+## 29. Team Roles & Integration Guidelines
 * **Frontend Lead:** Complete React 19 UI, dual portals, 8-step pipeline, and dossier modals.
 * **Backend Teammate Integration:**
-  * Implement endpoints defined in `src/services/apiClient.ts` (`POST /api/v1/verification`, `/api/v1/tampering`, etc.).
+  * Implement endpoints defined in `src/services/apiClient.ts` (`POST /api/v1/verification`, `/api/v1/nfc/verify`, `/api/v1/face/verify`).
   * Set `VITE_USE_MOCK=false` and `VITE_API_BASE_URL` to point to the backend server.
 * **AI/ML Teammate Integration:**
   * Connect deep learning tampering models (e.g. ELA + Vision Transformer) to `TamperingService` by implementing `TamperingAnalyzerAdapter` in `src/services/tamperingService.ts`.
 
 ---
 
-## 28. Hackathon Information
+## 30. Hackathon Information
 * **Event:** Smart India Hackathon 2026 (SIH 2026)
 * **Problem Statement:** SIH26188 — AI-Based Fake Identity & Document Screening System
 * **Theme:** Security & Surveillance / Smart Governance
@@ -396,5 +502,7 @@ PRAMAAN includes 5 realistic scenarios selectable directly from the **Scenario S
 
 ---
 
-## 29. Disclaimer
+## 31. Disclaimer
 > "PRAMAAN is a Smart India Hackathon / research prototype. Issuer verification, watchlist data, NFC credentials and reference data are simulated unless explicitly connected to an authorized production service. The system is designed as a decision-support and screening tool and does not replace official identity, immigration or law-enforcement systems."
+
+

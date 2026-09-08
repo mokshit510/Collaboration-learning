@@ -1,9 +1,12 @@
 # Dependencies & Build artifacts
 node_modules/
+**/node_modules/
 dist/
 dist-ssr/
 frontend/dist/
 frontend/node_modules/
+mobile-web/dist/
+mobile-web/node_modules/
 
 # Environment and secrets
 .env

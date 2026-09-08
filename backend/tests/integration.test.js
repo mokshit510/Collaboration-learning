@@ -167,15 +167,10 @@ const server = app.listen(0, async () => {
     console.log('================================================================');
     console.log('  ALL INTEGRATION TESTS PASSED SUCCESSFULLY! (10/10)            ');
     console.log('================================================================\n');
-
-    server.close(() => {
-      console.log('[Suite] Integration test server terminated cleanly.');
-      process.exit(0);
-    });
   } catch (err) {
     console.error('❌ Integration test failed with error:', err);
-    server.close(() => {
-      process.exit(1);
-    });
+    process.exitCode = 1;
+  } finally {
+    server.close();
   }
 });
