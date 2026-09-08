@@ -19,3 +19,11 @@ logs/
 .DS_Store
 .vscode/
 .idea/
+
+# Python & AI Service
+ai-service/venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+ai-service/*.jpg
