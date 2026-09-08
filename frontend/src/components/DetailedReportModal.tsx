@@ -58,17 +58,23 @@ export const DetailedReportModal: React.FC<DetailedReportModalProps> = ({
                 <h3 className="text-sm sm:text-base font-bold tracking-tight text-white">
                   Investigative Forensic Dossier — Case #{verificationId}
                 </h3>
-                <span
-                  className={`text-[10px] uppercase font-bold text-white px-2 py-0.5 rounded ${
-                    data.riskScore >= 60
-                      ? 'bg-[#DC2626]'
-                      : data.riskScore >= 30
-                      ? 'bg-amber-600'
-                      : 'bg-emerald-600'
-                  }`}
-                >
-                  {data.riskLevel} ({data.riskScore}/100)
-                </span>
+                {data.riskScore !== undefined && data.riskScore !== null ? (
+                  <span
+                    className={`text-[10px] uppercase font-bold text-white px-2 py-0.5 rounded ${
+                      data.riskScore >= 60
+                        ? 'bg-[#DC2626]'
+                        : data.riskScore >= 30
+                        ? 'bg-amber-600'
+                        : 'bg-emerald-600'
+                    }`}
+                  >
+                    {data.riskLevel} ({data.riskScore}/100)
+                  </span>
+                ) : (
+                  <span className="text-[10px] uppercase font-bold text-slate-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700 font-mono">
+                    AWAITING PIPELINE EXECUTION
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-400">
                 PRAMAAN Automated Risk Assessment &amp; Forensics Engine (EVIDENCE → CORRELATION → RISK)
@@ -245,52 +251,35 @@ export const DetailedReportModal: React.FC<DetailedReportModalProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-mono">
-                      {data.riskContributors.map((c) => (
-                        <tr key={c.category} className="hover:bg-slate-50">
-                          <td className="p-2.5 font-sans font-semibold text-slate-800">{c.category}</td>
-                          <td className="p-2.5">
-                            <span
-                              className={`font-bold px-2 py-0.5 rounded ${
-                                c.points > 20
-                                  ? 'bg-red-100 text-red-700'
-                                  : c.points > 0
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-emerald-100 text-emerald-700'
-                              }`}
-                            >
-                              +{c.points}
-                            </span>
+                      {(data.riskContributors || []).length > 0 ? (
+                        (data.riskContributors || []).map((c) => (
+                          <tr key={c.category} className="hover:bg-slate-50">
+                            <td className="p-2.5 font-sans font-semibold text-slate-800">{c.category}</td>
+                            <td className="p-2.5">
+                              <span
+                                className={`font-bold px-2 py-0.5 rounded ${
+                                  c.points > 20
+                                    ? 'bg-red-100 text-red-700'
+                                    : c.points > 0
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-emerald-100 text-emerald-700'
+                                }`}
+                              >
+                                +{c.points}
+                              </span>
+                            </td>
+                            <td className="p-2.5 font-sans text-slate-600">{c.description}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={3} className="p-4 text-center text-slate-400 font-sans">
+                            Risk assessment not run. Execute pipeline to calculate scoring matrix.
                           </td>
-                          <td className="p-2.5 font-sans text-slate-600">{c.description}</td>
                         </tr>
-                      ))}
+                      )}
                     </tbody>
                   </table>
-                </div>
-              </div>
-
-              {/* ICAO 9303 Checksums */}
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                  ICAO Document 9303 Checksum Validations
-                </h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                  <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
-                    <span className="text-[10px] text-emerald-800 font-bold block">Document No Checksum</span>
-                    <span className="font-mono font-bold text-emerald-700">Modulus 10 [OK]</span>
-                  </div>
-                  <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
-                    <span className="text-[10px] text-emerald-800 font-bold block">DOB Checksum</span>
-                    <span className="font-mono font-bold text-emerald-700">Modulus 10 [OK]</span>
-                  </div>
-                  <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
-                    <span className="text-[10px] text-emerald-800 font-bold block">Expiry Checksum</span>
-                    <span className="font-mono font-bold text-emerald-700">Modulus 10 [OK]</span>
-                  </div>
-                  <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
-                    <span className="text-[10px] text-emerald-800 font-bold block">Composite Checksum</span>
-                    <span className="font-mono font-bold text-emerald-700">Matched [OK]</span>
-                  </div>
                 </div>
               </div>
             </div>

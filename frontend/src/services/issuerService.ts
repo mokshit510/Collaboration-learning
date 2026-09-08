@@ -33,7 +33,9 @@ export class SimulatedIssuerAdapter implements IssuerServiceAdapter {
       'SIMULATED ISSUER VERIFICATION: Demo issuer data — not a live government database.';
     const timestamp = new Date().toISOString();
 
-    if (options.forceNotFound) {
+    const docNum = (doc.documentNumber || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+    if (options.forceNotFound || docNum === 'NONEXIST999' || docNum === 'UNKNOWN') {
       return {
         isSimulated,
         disclaimer,
@@ -59,7 +61,7 @@ export class SimulatedIssuerAdapter implements IssuerServiceAdapter {
       };
     }
 
-    if (options.forceExpired) {
+    if (options.forceExpired || docNum === 'T3456789') {
       return {
         isSimulated,
         disclaimer,
@@ -78,13 +80,140 @@ export class SimulatedIssuerAdapter implements IssuerServiceAdapter {
           status: 'EXPIRED',
           source: 'Supabase Synthetic Reference Database (Simulated)',
           simulated: true,
-          documentNumber: doc.documentNumber || 'T3456789',
+          documentNumber: docNum || 'T3456789',
           matchedFields: ['Passport Number', 'Full Name', 'Nationality'],
           mismatchedFields: [],
           message: 'Reference record status is EXPIRED.',
+          referenceRecord: {
+            documentNumber: 'T3456789',
+            fullName: 'ARJUN MEHTA',
+            status: 'EXPIRED',
+            scenario: 'EXPIRED',
+          },
         },
       };
     }
+
+    if (docNum === 'TESTBLK001') {
+      return {
+        isSimulated,
+        disclaimer,
+        documentFound: true,
+        registryStatus: 'BLACKLISTED',
+        issuerMatch: false,
+        issuingAuthority: 'Regional Passport Office (Simulated)',
+        digitalSignatureValid: false,
+        blacklistStatus: 'FLAGGED',
+        identityMatch: false,
+        timestamp,
+        source: 'Simulated Central Identity Registry (Demo Testbed)',
+        referenceComparison: {
+          found: true,
+          status: 'BLACKLISTED',
+          source: 'Supabase Synthetic Reference Database (Simulated)',
+          simulated: true,
+          documentNumber: 'TESTBLK001',
+          matchedFields: ['Passport Number'],
+          mismatchedFields: [],
+          message: 'Document number flagged on synthetic lookup watchlist.',
+          referenceRecord: {
+            documentNumber: 'TESTBLK001',
+            fullName: 'VIKRAM OBEROI',
+            status: 'BLACKLISTED',
+            scenario: 'BLACKLISTED',
+          },
+        },
+      };
+    }
+
+    if (docNum === 'TESTSUS001') {
+      return {
+        isSimulated,
+        disclaimer,
+        documentFound: true,
+        registryStatus: 'SUSPICIOUS',
+        issuerMatch: false,
+        issuingAuthority: 'Regional Passport Office (Simulated)',
+        digitalSignatureValid: false,
+        blacklistStatus: 'CLEAN',
+        identityMatch: false,
+        timestamp,
+        source: 'Simulated Central Identity Registry (Demo Testbed)',
+        referenceComparison: {
+          found: true,
+          status: 'SUSPICIOUS',
+          source: 'Supabase Synthetic Reference Database (Simulated)',
+          simulated: true,
+          documentNumber: 'TESTSUS001',
+          matchedFields: ['Passport Number'],
+          mismatchedFields: [],
+          message: 'Document number marked SUSPICIOUS in reference database.',
+          referenceRecord: {
+            documentNumber: 'TESTSUS001',
+            fullName: 'RAJESH KHANNA',
+            status: 'SUSPICIOUS',
+            scenario: 'SUSPICIOUS',
+          },
+        },
+      };
+    }
+
+    // T4567890: Seeded record is AMAN SINGH (ACTIVE), but document is AMAN VERMA -> MISMATCH
+    if (docNum === 'T4567890') {
+      const extractedName = doc.holderName || `${doc.givenName || ''} ${doc.surname || ''}`.trim() || 'AMAN VERMA';
+      return {
+        isSimulated,
+        disclaimer,
+        documentFound: true,
+        registryStatus: 'MISMATCH',
+        issuerMatch: false,
+        issuingAuthority: 'Regional Passport Office, Jaipur (Simulated)',
+        digitalSignatureValid: false,
+        blacklistStatus: 'CLEAN',
+        identityMatch: false,
+        timestamp,
+        source: 'National Document Registry Simulator (v2026.4)',
+        referenceComparison: {
+          found: true,
+          status: 'MISMATCH',
+          source: 'Supabase Synthetic Reference Database (Simulated)',
+          simulated: true,
+          documentNumber: 'T4567890',
+          matchedFields: ['Passport Number', 'Given Names', 'Date of Birth', 'Gender', 'Nationality'],
+          mismatchedFields: [
+            {
+              field: 'fullName',
+              label: 'Full Name',
+              extractedValue: extractedName,
+              referenceValue: 'AMAN SINGH',
+            },
+            {
+              field: 'surname',
+              label: 'Surname',
+              extractedValue: doc.surname || 'VERMA',
+              referenceValue: 'SINGH',
+            },
+          ],
+          message: 'Reference record found (ACTIVE), but extracted identity fields mismatch.',
+          referenceRecord: {
+            documentNumber: 'T4567890',
+            fullName: 'AMAN SINGH',
+            surname: 'SINGH',
+            givenNames: 'AMAN',
+            nationality: 'INDIAN',
+            dob: '1997-08-08',
+            gender: 'M',
+            placeOfBirth: 'JAIPUR',
+            status: 'ACTIVE',
+            scenario: 'MISMATCH',
+          },
+        },
+      };
+    }
+
+    // Default authentic document (T1234587, T2345678, etc.)
+    const resolvedDocNum = docNum || 'T1234587';
+    const resolvedFullName = doc.holderName || (docNum === 'T1234587' ? 'RAHUL SHARMA' : 'PRIYA PATIL');
 
     return {
       isSimulated,
@@ -108,7 +237,7 @@ export class SimulatedIssuerAdapter implements IssuerServiceAdapter {
         status: 'VERIFIED',
         source: 'Supabase Synthetic Reference Database (Simulated)',
         simulated: true,
-        documentNumber: doc.documentNumber || 'T2345678',
+        documentNumber: resolvedDocNum,
         matchedFields: [
           'Passport Number',
           'Full Name',
@@ -119,6 +248,12 @@ export class SimulatedIssuerAdapter implements IssuerServiceAdapter {
         ],
         mismatchedFields: [],
         message: 'All fields verified against synthetic reference database.',
+        referenceRecord: {
+          documentNumber: resolvedDocNum,
+          fullName: resolvedFullName,
+          status: 'ACTIVE',
+          scenario: 'VALID',
+        },
       },
     };
   }
@@ -321,47 +456,47 @@ export class IssuerService {
       const isSuspicious = ref.status === 'SUSPICIOUS';
       const isNotFound = ref.status === 'NOT_FOUND' || !ref.found;
 
+      const recordStatus =
+        (ref.referenceRecord as any)?.status ||
+        (isVerified || isMismatch ? 'ACTIVE' : ref.status);
+
       return [
         {
           id: 'db_lookup',
           label: 'Passport No. in Database',
-          status: isVerified
-            ? 'VERIFIED'
-            : isNotFound
-            ? 'NOT FOUND'
-            : ref.status,
+          status: isNotFound ? 'NOT FOUND' : isVerified ? 'VERIFIED' : 'FOUND',
           valid: !isNotFound && !isBlacklisted,
           detail: isNotFound
             ? 'Document number not indexed in synthetic reference database'
             : `Record matched in ${ref.source || 'Supabase Synthetic Reference Database'}`,
-          severity: isVerified ? 'PASS' : isNotFound ? 'FAIL' : 'WARNING',
+          severity: isNotFound ? 'FAIL' : isVerified ? 'PASS' : 'PASS',
         },
         {
           id: 'status',
           label: 'Status',
-          status: ref.status,
-          valid: isVerified,
-          detail: isVerified
-            ? 'Official state: ACTIVE (All fields verified)'
-            : isExpired
-            ? 'Credential marked EXPIRED in reference database'
-            : isBlacklisted
-            ? 'Active revocation notice / blacklisted credential'
-            : isSuspicious
-            ? 'Flagged as SUSPICIOUS in reference database'
-            : isMismatch
-            ? 'Reference record exists but extracted fields mismatch'
-            : 'Unregistered credential',
-          severity: isVerified
-            ? 'PASS'
-            : isSuspicious
-            ? 'WARNING'
-            : 'FAIL',
+          status: recordStatus,
+          valid: recordStatus === 'ACTIVE',
+          detail:
+            recordStatus === 'ACTIVE'
+              ? 'Official state: ACTIVE'
+              : isExpired
+              ? 'Credential marked EXPIRED in reference database'
+              : isBlacklisted
+              ? 'Active revocation notice / blacklisted credential'
+              : isSuspicious
+              ? 'Flagged as SUSPICIOUS in reference database'
+              : 'Unregistered credential',
+          severity:
+            recordStatus === 'ACTIVE'
+              ? 'PASS'
+              : isSuspicious
+              ? 'WARNING'
+              : 'FAIL',
         },
         {
           id: 'blacklist',
           label: 'Blacklist Check',
-          status: isBlacklisted ? 'FLAGGED' : 'Not Flagged',
+          status: isBlacklisted ? 'FLAGGED' : 'Clean',
           valid: !isBlacklisted,
           detail: isBlacklisted
             ? 'Credential indexed on synthetic lookout list'
@@ -370,13 +505,13 @@ export class IssuerService {
         },
         {
           id: 'issuer_match',
-          label: 'Issuer Match',
+          label: 'Identity Match',
           status: isMismatch
             ? 'MISMATCH'
             : isVerified
-            ? 'Authenticated'
+            ? 'MATCH'
             : isNotFound
-            ? 'Unverified'
+            ? 'UNVERIFIED'
             : ref.status,
           valid: isVerified,
           detail:
@@ -384,6 +519,8 @@ export class IssuerService {
               ? `Mismatched: ${ref.mismatchedFields
                   .map((m) => `${m.label || m.field} (ref: ${m.referenceValue})`)
                   .join(', ')}`
+              : isVerified
+              ? 'All biographical fields match reference profile'
               : `${res.issuingAuthority} verified against reference profile`,
           severity: isVerified ? 'PASS' : isMismatch ? 'FAIL' : 'WARNING',
         },

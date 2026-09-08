@@ -13,6 +13,7 @@ import referenceRoutes from './routes/referenceRoutes.js';
 import sessionRoutes from './routes/sessionRoutes.js';
 import nfcRoutes from './routes/nfcRoutes.js';
 import faceRoutes from './routes/faceRoutes.js';
+import tamperingRoutes from './routes/tamperingRoutes.js';
 
 const app = express();
 
@@ -95,6 +96,8 @@ app.use('/api/v1/nfc', nfcRoutes);
 app.use('/api/nfc', nfcRoutes);
 app.use('/api/v1/face', faceRoutes);
 app.use('/api/face', faceRoutes);
+app.use('/api/v1/tampering', tamperingRoutes);
+app.use('/api/tampering', tamperingRoutes);
 
 // 404 handler
 app.use(notFoundHandler);

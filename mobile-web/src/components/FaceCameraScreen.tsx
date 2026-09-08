@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Camera, RefreshCw, CheckCircle2, AlertTriangle, UserCheck, ShieldCheck, SwitchCamera, Upload } from 'lucide-react';
+import { Camera, RefreshCw, CheckCircle2, AlertTriangle, UserCheck, ShieldCheck, Upload } from 'lucide-react';
 import { MobileApiService, type SessionData } from '../services/api';
 
 interface FaceCameraScreenProps {
@@ -21,50 +21,154 @@ export const FaceCameraScreen: React.FC<FaceCameraScreenProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isStartingRef = useRef<boolean>(false);
 
   // Stop camera tracks helper
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current.getTracks().forEach((track) => {
+        track.stop();
+        console.log('[Camera] track.readyState after stop:', track.readyState);
+      });
       streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
     setCameraActive(false);
   }, []);
 
   // Start front camera
   const startCamera = useCallback(async () => {
+    if (isStartingRef.current) {
+      console.log('[Camera] startCamera already in progress, skipping duplicate call');
+      return;
+    }
+    isStartingRef.current = true;
     setCameraError(null);
+
+    // 1. Stop any existing stream first
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Camera access API is not available on this browser.');
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Camera access API is not available on this browser or context.');
       }
+
+      console.log('[Camera] Requesting getUserMedia...');
+      // 1. Call getUserMedia
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: 'user',
+          facingMode: { ideal: 'user' },
           width: { ideal: 640 },
           height: { ideal: 640 },
         },
         audio: false,
       });
+
+      console.log('[Camera] getUserMedia success');
+
+      // 2. Store MediaStream in ref
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
+
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        console.log('[Camera] video track label:', videoTrack.label);
+        console.log('[Camera] track.readyState:', videoTrack.readyState);
       }
-      setCameraActive(true);
+
+      const video = videoRef.current;
+      if (!video) {
+        throw new Error('Video element reference is not available.');
+      }
+
+      // 4. After video element exists, assign srcObject
+      video.srcObject = stream;
+
+      // 5. Set muted and playsInline
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute('muted', '');
+      video.setAttribute('playsinline', '');
+
+      console.log('[Camera] video.readyState before play:', video.readyState);
+
+      // 6. Wait for loadedmetadata if readyState < 1
+      if (video.readyState < 1) {
+        await new Promise<void>((resolve) => {
+          const onMetadata = () => {
+            video.removeEventListener('loadedmetadata', onMetadata);
+            resolve();
+          };
+          video.addEventListener('loadedmetadata', onMetadata, { once: true });
+          setTimeout(resolve, 1500);
+        });
+      }
+
+      console.log('[Camera] video.readyState after metadata:', video.readyState);
+
+      // 7. Call video.play()
+      try {
+        await video.play();
+        console.log('[Camera] video.play() successful');
+      } catch (playErr) {
+        console.error('[Camera] video.play() errors:', playErr);
+        throw playErr;
+      }
+
+      console.log('[Camera] video.videoWidth:', video.videoWidth);
+      console.log('[Camera] video.videoHeight:', video.videoHeight);
+
+      // 8. Verify videoWidth and videoHeight > 0 before treating as active
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        setCameraActive(true);
+      } else {
+        await new Promise<void>((resolve) => {
+          let attempts = 0;
+          const checkDimensions = () => {
+            attempts++;
+            if (video.videoWidth > 0 && video.videoHeight > 0) {
+              console.log('[Camera] video.videoWidth:', video.videoWidth);
+              console.log('[Camera] video.videoHeight:', video.videoHeight);
+              setCameraActive(true);
+              resolve();
+            } else if (attempts >= 20) {
+              console.warn('[Camera] Dimensions check timeout; activating camera feed');
+              setCameraActive(true);
+              resolve();
+            } else {
+              setTimeout(checkDimensions, 100);
+            }
+          };
+          checkDimensions();
+        });
+      }
+
     } catch (err: any) {
-      console.warn('[Camera] getUserMedia failed:', err);
-      setCameraError(
-        err.name === 'NotAllowedError'
-          ? 'Camera permission denied. Please allow camera access or use photo upload below.'
-          : 'Unable to start camera stream. You can upload a photo or use demo capture.'
-      );
+      console.error('[Camera] startCamera failed:', err);
       setCameraActive(false);
+
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setCameraError('Camera permission denied. Please allow camera access in browser site settings.');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setCameraError('No camera was found on this device.');
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        setCameraError('Camera is already in use by another application or browser tab.');
+      } else if (err.name === 'SecurityError') {
+        setCameraError('Camera access was blocked by browser security. Open PRAMAAN using HTTPS.');
+      } else {
+        setCameraError(`Unable to start camera: ${err.message || err.name || 'Unknown error'}`);
+      }
+    } finally {
+      isStartingRef.current = false;
     }
   }, []);
 
+  // 9. Cleanly stop all tracks when leaving Face Gate or unmounting
   useEffect(() => {
-    // Automatically start camera if stage 6 is active and no result yet
     if (session.stage === 6 && !faceFeedback && !capturedPreview) {
       startCamera();
     }
@@ -75,13 +179,26 @@ export const FaceCameraScreen: React.FC<FaceCameraScreenProps> = ({
 
   // Capture frame from video
   const handleCaptureFrame = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || !canvasRef.current) {
+      setCameraError('Video feed not available for capture.');
+      return;
+    }
+    const video = videoRef.current;
+    if (video.readyState < 2) {
+      setCameraError('Video feed is not ready yet. Please hold steady.');
+      return;
+    }
+    if (video.videoWidth <= 0 || video.videoHeight <= 0) {
+      setCameraError('Camera dimensions not detected. Please wait a moment.');
+      return;
+    }
+
     setSubmitting(true);
+    setCameraError(null);
     try {
-      const video = videoRef.current;
       const canvas = canvasRef.current;
-      const width = video.videoWidth || 480;
-      const height = video.videoHeight || 480;
+      const width = video.videoWidth;
+      const height = video.videoHeight;
       canvas.width = width;
       canvas.height = height;
 
@@ -93,7 +210,7 @@ export const FaceCameraScreen: React.FC<FaceCameraScreenProps> = ({
       setCapturedPreview(base64Image);
       stopCamera();
 
-      // Send to backend
+      // Send actual captured frame to backend
       const result = await MobileApiService.verifyFace({
         sessionId: session.sessionId,
         livePhoto: base64Image,
@@ -139,7 +256,7 @@ export const FaceCameraScreen: React.FC<FaceCameraScreenProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // Test simulation fallback (useful when running on non-HTTPS LAN where browser restricts getUserMedia)
+  // Test simulation fallback (useful when testing without live subject)
   const handleSimulateFaceCapture = async (mismatch: boolean) => {
     setSubmitting(true);
     setCameraError(null);
@@ -201,7 +318,8 @@ export const FaceCameraScreen: React.FC<FaceCameraScreenProps> = ({
                   Biometric Face Match: {faceFeedback.matchScore}%
                 </div>
                 <div className="text-[10px] text-emerald-400">
-                  Liveness: {faceFeedback.liveness} • Confidence: {faceFeedback.confidence}%
+                  Liveness: {faceFeedback.liveness ? faceFeedback.liveness.replace('_', ' ') : 'NOT EVALUATED'}
+                  {typeof faceFeedback.confidence === 'number' ? ` • Confidence: ${faceFeedback.confidence}%` : ''}
                 </div>
               </div>
             </div>
@@ -243,7 +361,7 @@ export const FaceCameraScreen: React.FC<FaceCameraScreenProps> = ({
                 setCapturedPreview(null);
                 startCamera();
               }}
-              className="text-[10px] text-blue-400 hover:text-blue-300 underline"
+              className="text-[10px] text-blue-400 hover:text-blue-300 underline cursor-pointer"
             >
               Retake photo
             </button>
@@ -254,16 +372,19 @@ export const FaceCameraScreen: React.FC<FaceCameraScreenProps> = ({
         <div className="space-y-3">
           {/* Viewfinder Frame */}
           <div className="relative w-full aspect-square bg-black rounded-2xl overflow-hidden border-2 border-slate-700 shadow-inner flex items-center justify-center">
+            {/* 3. Render video element (always mounted so ref exists, visibility controlled by cameraActive) */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className={`w-full h-full object-cover transform -scale-x-100 ${
+                cameraActive ? 'block' : 'hidden'
+              }`}
+            />
+
             {cameraActive ? (
               <>
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover transform -scale-x-100"
-                />
-
                 {/* Oval Guideline Overlay */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="w-56 h-72 rounded-[50%] border-2 border-dashed border-blue-400/80 shadow-[0_0_0_9999px_rgba(11,19,43,0.65)] flex flex-col items-center justify-between py-6">
@@ -351,7 +472,7 @@ export const FaceCameraScreen: React.FC<FaceCameraScreenProps> = ({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="text-blue-400 hover:text-blue-300 flex items-center gap-1 font-semibold"
+                className="text-blue-400 hover:text-blue-300 flex items-center gap-1 font-semibold cursor-pointer"
               >
                 <Upload className="w-3 h-3" />
                 <span>Upload Selfie Photo</span>

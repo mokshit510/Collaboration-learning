@@ -179,8 +179,15 @@ export class VerificationService {
         { id: 'blacklist', label: 'Blacklist Check', status: '—', valid: true },
         { id: 'issuer_match', label: 'Issuer Match', status: '—', valid: true },
       ],
+      livePhotoUrl: undefined,
+      faceMatchScore: undefined,
+      faceMatchStatus: undefined,
+      riskScore: undefined,
+      riskLevel: undefined,
+      riskDescription: undefined,
       suspiciousElements: [],
       riskContributors: [],
+      aiSummary: 'Awaiting pipeline execution. Ingest a document and click "Run Pipeline" to perform verification.',
     };
   }
 
@@ -319,7 +326,7 @@ export class VerificationService {
    */
   public static async validateDocument(
     doc: DocumentData,
-    options?: { forceExpired?: boolean; forceMismatchedMrz?: boolean }
+    options?: { forceExpired?: boolean }
   ): Promise<ValidationResult> {
     await delay(350);
     return ValidationEngine.validate(doc, options);
@@ -337,13 +344,12 @@ export class VerificationService {
   }
 
   /**
-   * 5. Tampering Analysis (AI Baseline Forensics / Adapter)
+   * 5. Tampering Analysis (Real AI Forensics)
    */
   public static async analyzeTampering(
     doc: DocumentData,
-    options?: { forceTampered?: boolean; forceClean?: boolean }
+    options?: { file?: File; sessionId?: string; forceTampered?: boolean; forceClean?: boolean }
   ): Promise<TamperingResult> {
-    await delay(550);
     return TamperingService.analyze(doc, options);
   }
 
@@ -351,12 +357,11 @@ export class VerificationService {
    * 6. Biometric Face Verification
    */
   public static async verifyFace(
-    docPhotoUrl: string,
-    livePhotoUrl: string,
-    options?: { forceMismatch?: boolean }
+    docPhoto: File | Blob | string,
+    livePhoto: File | Blob | string,
+    options?: { sessionId?: string; file?: File }
   ): Promise<FaceResult> {
-    await delay(400);
-    return FaceService.verify(docPhotoUrl, livePhotoUrl, options);
+    return FaceService.verify(docPhoto, livePhoto, options);
   }
 
   /**
@@ -410,7 +415,8 @@ export class VerificationService {
     onStepProgress?: PipelineProgressCallback,
     uploadedFile?: File,
     nfcResultOverride?: NfcResult,
-    faceResultOverride?: FaceResult
+    faceResultOverride?: FaceResult,
+    tamperingResultOverride?: TamperingResult
   ): Promise<VerificationResult> {
     const startTime = performance.now();
     const verificationId = `PRM-2026-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -524,11 +530,10 @@ export class VerificationService {
     // STAGE 4: Document Validation
     // ----------------------------------------------------
     t0 = performance.now();
-    onStepProgress?.(4, 'Document Validation', 'PROCESSING', 'Executing ICAO 9303 checksums & chronological validation');
+    onStepProgress?.(4, 'Document Validation', 'PROCESSING', 'Executing document field & chronological validation');
 
     const validationResult = await this.validateDocument(ocrDocument, {
       forceExpired: isExpiredScenario,
-      forceMismatchedMrz: isTamperedScenario,
     });
     const valStatus: PipelineStepStatus =
       validationResult.overallStatus === 'FAIL'
@@ -554,10 +559,11 @@ export class VerificationService {
     const issuerResult = await this.verifyIssuer(ocrDocument, {
       forceExpired: isExpiredScenario,
     });
-    const tamperingResult = await this.analyzeTampering(ocrDocument, {
-      forceTampered: isTamperedScenario,
-      forceClean: scenarioId === 'genuine',
-    });
+    const tamperingResult =
+      tamperingResultOverride ||
+      (await this.analyzeTampering(ocrDocument, {
+        file: uploadedFile,
+      }));
 
     const isIssuerProblem =
       issuerResult.registryStatus === 'EXPIRED' ||
@@ -596,9 +602,9 @@ export class VerificationService {
     onStepProgress?.(6, 'Face Input (Phone)', 'PROCESSING', 'Comparing document portrait with live mobile checkpoint feed');
 
     const faceResult = faceResultOverride || (await this.verifyFace(
-      ocrDocument.photoUrl,
-      ocrDocument.livePhotoUrl,
-      { forceMismatch: isTamperedScenario }
+      uploadedFile || ocrDocument.photoUrl,
+      ocrDocument.livePhotoUrl || '/images/live_capture.jpg',
+      { file: uploadedFile }
     ));
     const faceStatus: PipelineStepStatus =
       faceResult.status === 'FAIL' ? 'FAILED' : faceResult.status === 'REVIEW' ? 'WARNING' : 'COMPLETED';
@@ -687,7 +693,7 @@ export class VerificationService {
         recommendations.push('Chip credential contradicts optical text; seize physical specimen for counterfeit analysis.');
       }
       if (validationResult.overallStatus === 'FAIL') {
-        recommendations.push('Review document checksums and formatting inconsistencies.');
+        recommendations.push('Review document formatting and chronological inconsistencies.');
       }
       if (faceResult.status === 'FAIL') {
         recommendations.push('Biometric match failure; verify physical bearer.');

@@ -25,8 +25,16 @@ logs/
 
 # Python & AI Service
 ai-service/venv/
+ai-services/.venv
+ai-services/.venv/
+.venv
+.venv/
+**/.venv
+**/.venv/
 venv/
+**/__pycache__/
 __pycache__/
 *.pyc
 .pytest_cache/
 ai-service/*.jpg
+ai-services/*.jpg

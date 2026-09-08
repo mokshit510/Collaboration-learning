@@ -9,6 +9,7 @@ import type {
   DemoScenarioId,
   VerificationRecord,
   UploadedDocument,
+  TamperingResult,
 } from './types';
 import { mockPassportData } from './data/mockVerificationData';
 import { VerificationService } from './services/verificationService';
@@ -33,8 +34,18 @@ import { AuthorityDashboard } from './pages/AuthorityDashboard';
 import { ValidationEngine } from './services/validationEngine';
 import { IssuerService } from './services/issuerService';
 import { TamperingService } from './services/tamperingService';
+import { FaceService } from './services/faceService';
 import { apiClient } from './services/apiClient';
-import type { NfcResult, FaceResult } from './types';
+import type { NfcResult, FaceResult, RiskResult } from './types';
+
+const readFileAsBase64 = (blobOrFile: Blob | File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blobOrFile);
+  });
+};
 
 export function App() {
   // Navigation & Role/Portal Mode
@@ -115,25 +126,81 @@ export function App() {
   // Pipeline Step & Data-driven states (8 stages with Stage 3 NFC and Stage 6 Face gates)
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [stepStates, setStepStates] = useState<Record<number, PipelineStepStatus>>({
-    1: 'COMPLETED',
-    2: 'COMPLETED',
-    3: 'COMPLETED',
-    4: 'COMPLETED',
-    5: 'COMPLETED',
-    6: 'COMPLETED',
-    7: 'COMPLETED',
-    8: 'COMPLETED',
+    1: 'NOT_STARTED',
+    2: 'NOT_STARTED',
+    3: 'NOT_STARTED',
+    4: 'NOT_STARTED',
+    5: 'NOT_STARTED',
+    6: 'NOT_STARTED',
+    7: 'NOT_STARTED',
+    8: 'NOT_STARTED',
   });
   const [stepMessages, setStepMessages] = useState<Record<number, string>>({});
-  const [processingTime, setProcessingTime] = useState<string>('12.4 seconds');
+  const [processingTime, setProcessingTime] = useState<string>('0.0 seconds');
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
 
   // Phone Connection & Mobile Gate States
   const [sessionId, setSessionId] = useState<string>('PRM-20260908-1832');
+  const activeSessionIdRef = useRef<string>('PRM-20260908-1832');
   const [phoneConnected, setPhoneConnected] = useState<boolean>(false);
   const [nfcResult, setNfcResult] = useState<NfcResult | null>(null);
   const [faceResult, setFaceResult] = useState<FaceResult | null>(null);
+  const [riskResult, setRiskResult] = useState<RiskResult | null>(null);
+  const [tamperingResult, setTamperingResult] = useState<TamperingResult | null>(null);
   const [pipelinePausedAt, setPipelinePausedAt] = useState<3 | 6 | null>(null);
+
+  // Synchronize ref with sessionId state to prevent stale closures
+  useEffect(() => {
+    activeSessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  // Create isolated verification session for every document / run
+  const startNewVerificationSession = useCallback(
+    async (doc?: DocumentData) => {
+      setNfcResult(null);
+      setFaceResult(null);
+      setRiskResult(null);
+      setVerificationResult(null);
+      setTamperingResult(null);
+      setPipelinePausedAt(null);
+
+      try {
+        const res = await apiClient.initSession();
+        if (res?.data?.sessionId) {
+          const freshId = res.data.sessionId;
+          setSessionId(freshId);
+          activeSessionIdRef.current = freshId;
+          if (doc) {
+            await apiClient.updateSessionStage(freshId, 1, 'DOCUMENT_UPLOAD', {
+              document: {
+                documentNumber: doc.documentNumber,
+                holderName: doc.holderName,
+                dob: doc.dob,
+                nationality: doc.nationality,
+                expiryDate: doc.expiryDate,
+                photoUrl: doc.photoBase64 || doc.photoUrl,
+                photoBase64: doc.photoBase64,
+              },
+            });
+          }
+          return freshId;
+        }
+      } catch (err) {
+        console.warn('[Session] Backend init session fallback to client-generated ID:', err);
+      }
+
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+      const localId = `PRM-${yyyy}${mm}${dd}-${randomSuffix}`;
+      setSessionId(localId);
+      activeSessionIdRef.current = localId;
+      return localId;
+    },
+    []
+  );
 
   // Status & Modals
   const [investigationStatus, setInvestigationStatus] = useState<InvestigationStatus>('unflagged');
@@ -151,38 +218,69 @@ export function App() {
   };
 
   // Switch Document Type
-  const handleTypeChange = (type: DocumentType) => {
+  const handleTypeChange = async (type: DocumentType) => {
     setActiveType(type);
     if (uploadedDocument && uploadedDocument.file) {
       setUploadedDocument((prev) => (prev ? { ...prev, documentType: type } : null));
-      setDocumentData((prev) => ({
-        ...prev,
+      const updatedDoc: DocumentData = {
+        ...documentData,
         type,
         title: `${type.toUpperCase()} — ${uploadedDocument.fileName}`,
-      }));
+      };
+      setDocumentData(updatedDoc);
+      await startNewVerificationSession(updatedDoc);
       addToast('info', `Classification: ${type.toUpperCase()}`, 'Updated document classification for verification.');
     } else {
       const data = VerificationService.getDocumentData(type);
       setDocumentData(data);
       setProcessingTime(data.processingTime);
       setInvestigationStatus('unflagged');
+      await startNewVerificationSession(data);
       addToast('info', `Switched to ${type.toUpperCase()} Record`, `Loaded ${data.title}`);
     }
   };
 
   // Switch Demo Scenario
-  const handleScenarioChange = (scenarioId: DemoScenarioId) => {
+  const handleScenarioChange = async (scenarioId: DemoScenarioId) => {
     cleanupObjectUrl();
     setUploadedDocument(null);
     setSelectedScenario(scenarioId);
     setNfcResult(null);
     setFaceResult(null);
+    setRiskResult(null);
+    setVerificationResult(null);
+    setTamperingResult(null);
     setPipelinePausedAt(null);
     const data = VerificationService.getScenarioData(scenarioId);
     setActiveType(data.type);
+
+    if (data.photoUrl && !data.photoUrl.startsWith('data:') && typeof window !== 'undefined') {
+      try {
+        const res = await fetch(data.photoUrl);
+        if (res.ok) {
+          const blob = await res.blob();
+          data.photoBase64 = await readFileAsBase64(blob);
+        }
+      } catch (e) {
+        console.warn('[PRAMAAN] Could not load scenario image as base64:', e);
+      }
+    }
+
     setDocumentData(data);
     setInvestigationStatus('unflagged');
+    await startNewVerificationSession(data);
     setCurrentStep(1);
+    setStepStates({
+      1: 'NOT_STARTED',
+      2: 'NOT_STARTED',
+      3: 'NOT_STARTED',
+      4: 'NOT_STARTED',
+      5: 'NOT_STARTED',
+      6: 'NOT_STARTED',
+      7: 'NOT_STARTED',
+      8: 'NOT_STARTED',
+    });
+    setStepMessages({});
     addToast('info', `Loaded Scenario: ${scenarioId.toUpperCase()}`, data.title);
   };
 
@@ -194,10 +292,20 @@ export function App() {
   const handleStartSimulation = async () => {
     if (isSimulating) return;
     setIsSimulating(true);
+
+    // Ensure session is fresh for this run to prevent evidence carryover
+    let currentActiveSession = activeSessionIdRef.current;
+    if (nfcResult || faceResult || stepStates[8] === 'COMPLETED' || currentStep > 1) {
+      currentActiveSession = await startNewVerificationSession(documentData);
+    }
+
     setCurrentStep(1);
     setInvestigationStatus('unflagged');
     setNfcResult(null);
     setFaceResult(null);
+    setRiskResult(null);
+    setVerificationResult(null);
+    setTamperingResult(null);
     setPipelinePausedAt(null);
 
     // Reset step states (8 stages)
@@ -243,14 +351,15 @@ export function App() {
 
       // Sync active session document and stage to backend
       try {
-        await apiClient.updateSessionStage(sessionId, 3, 'WAITING_NFC', {
+        await apiClient.updateSessionStage(currentActiveSession, 3, 'WAITING_NFC', {
           document: {
             documentNumber: updatedDoc.documentNumber,
             holderName: updatedDoc.holderName,
             dob: updatedDoc.dob,
             nationality: updatedDoc.nationality,
             expiryDate: updatedDoc.expiryDate,
-            photoUrl: updatedDoc.photoUrl,
+            photoUrl: updatedDoc.photoBase64 || updatedDoc.photoUrl,
+            photoBase64: updatedDoc.photoBase64,
           },
         });
       } catch (e) {
@@ -290,6 +399,12 @@ export function App() {
 
   // Stage 4 & 5: Resume after Stage 3 NFC -> Validation -> Issuer + Tampering -> Pause at Stage 6 (Face)
   const handleResumeAfterNfc = useCallback(async (receivedNfc: NfcResult) => {
+    // Guard: ignore stale NFC evidence that belongs to a different or completed session
+    if (receivedNfc.sessionId && receivedNfc.sessionId !== activeSessionIdRef.current) {
+      console.warn('[Pipeline] Ignored stale NFC evidence from session:', receivedNfc.sessionId, 'active:', activeSessionIdRef.current);
+      return;
+    }
+
     setNfcResult(receivedNfc);
     setPipelinePausedAt(null);
 
@@ -314,14 +429,12 @@ export function App() {
       // 4. STAGE 4: Document Validation
       setCurrentStep(4);
       setStepStates((prev) => ({ ...prev, 4: 'PROCESSING' }));
-      setStepMessages((prev) => ({ ...prev, 4: 'Executing ICAO 9303 checksums & chronological validation' }));
+      setStepMessages((prev) => ({ ...prev, 4: 'Executing document field & chronological validation' }));
 
-      const isTamperedScenario = selectedScenario === 'tampered';
       const isExpiredScenario = selectedScenario === 'expired';
 
       const validationRes = await VerificationService.validateDocument(documentData, {
         forceExpired: isExpiredScenario,
-        forceMismatchedMrz: isTamperedScenario,
       });
 
       const valStatus: PipelineStepStatus =
@@ -346,19 +459,25 @@ export function App() {
         forceExpired: isExpiredScenario,
       });
       const tamperingRes = await VerificationService.analyzeTampering(documentData, {
-        forceTampered: isTamperedScenario,
-        forceClean: selectedScenario === 'genuine',
+        file: uploadedDocument?.file,
+        sessionId: activeSessionIdRef.current,
       });
 
       const isIssuerProblem =
         issuerRes.registryStatus === 'EXPIRED' ||
         issuerRes.registryStatus === 'REVOKED' ||
         issuerRes.registryStatus === 'BLACKLISTED' ||
-        issuerRes.registryStatus === 'NOT_FOUND';
+        issuerRes.registryStatus === 'NOT_FOUND' ||
+        issuerRes.registryStatus === 'MISMATCH';
       const isTamperProblem = tamperingRes.tamperingScore >= 30;
 
       const tampStatus: PipelineStepStatus =
-        tamperingRes.tamperingScore >= 60 || issuerRes.registryStatus === 'NOT_FOUND' || issuerRes.registryStatus === 'BLACKLISTED'
+        tamperingRes.reasonCodes?.includes('AI_SERVICE_UNAVAILABLE')
+          ? 'WARNING'
+          : tamperingRes.tamperingScore >= 60 ||
+            issuerRes.registryStatus === 'NOT_FOUND' ||
+            issuerRes.registryStatus === 'BLACKLISTED' ||
+            issuerRes.registryStatus === 'MISMATCH'
           ? 'FAILED'
           : isIssuerProblem || isTamperProblem
           ? 'WARNING'
@@ -367,8 +486,12 @@ export function App() {
       setStepStates((prev) => ({ ...prev, 5: tampStatus }));
       setStepMessages((prev) => ({
         ...prev,
-        5: `Tamper score: ${tamperingRes.tamperingScore}/100 (${tamperingRes.verdict})`,
+        5: tamperingRes.reasonCodes?.includes('AI_SERVICE_UNAVAILABLE')
+          ? 'AI Forensic Vision Unavailable'
+          : `Tamper score: ${tamperingRes.tamperingScore}/100 (${tamperingRes.verdict.replace(/_/g, ' ')})`,
       }));
+
+      setTamperingResult(tamperingRes);
 
       const intermediateDocWithForensics: DocumentData = {
         ...documentData,
@@ -381,7 +504,7 @@ export function App() {
 
       // Tell backend session we are now at Stage 6 (WAITING_FACE)
       try {
-        await apiClient.updateSessionStage(sessionId, 6, 'WAITING_FACE');
+        await apiClient.updateSessionStage(activeSessionIdRef.current, 6, 'WAITING_FACE');
       } catch (e) {
         console.warn('[PRAMAAN][Session] Backend sync deferred:', e);
       }
@@ -405,10 +528,16 @@ export function App() {
       setIsSimulating(false);
       setPipelinePausedAt(null);
     }
-  }, [documentData, selectedScenario, sessionId, addToast]);
+  }, [documentData, selectedScenario, addToast]);
 
   // Stage 7 & 8: Resume after Stage 6 Face -> Evidence Fusion + Risk Assessment -> Verification Complete
   const handleResumeAfterFace = useCallback(async (receivedFace: FaceResult) => {
+    // Guard: ignore stale Face evidence that belongs to a different or completed session
+    if (receivedFace.sessionId && receivedFace.sessionId !== activeSessionIdRef.current) {
+      console.warn('[Pipeline] Ignored stale Face evidence from session:', receivedFace.sessionId, 'active:', activeSessionIdRef.current);
+      return;
+    }
+
     setFaceResult(receivedFace);
     setPipelinePausedAt(null);
 
@@ -443,10 +572,12 @@ export function App() {
         undefined,
         uploadedDocument?.file,
         nfcResult || undefined,
-        receivedFace
+        receivedFace,
+        tamperingResult || undefined
       );
 
       setVerificationResult(finalResult);
+      setRiskResult(finalResult.risk);
       setDocumentData(finalResult.document);
       setProcessingTime(finalResult.document.processingTime);
 
@@ -465,7 +596,7 @@ export function App() {
       setCurrentStep(8);
 
       try {
-        await apiClient.updateSessionStage(sessionId, 8, 'VERIFICATION_COMPLETE');
+        await apiClient.updateSessionStage(activeSessionIdRef.current, 8, 'VERIFICATION_COMPLETE');
       } catch (e) {
         console.warn('[PRAMAAN][Session] Complete stage sync deferred:', e);
       }
@@ -495,7 +626,7 @@ export function App() {
     } finally {
       setIsSimulating(false);
     }
-  }, [documentData, nfcResult, selectedScenario, sessionId, uploadedDocument, addToast]);
+  }, [documentData, nfcResult, tamperingResult, selectedScenario, uploadedDocument, addToast]);
 
   // Mobile Polling & Gate Synchronization Effect
   useEffect(() => {
@@ -506,17 +637,32 @@ export function App() {
         const res = await apiClient.getCurrentSession();
         if (res?.data && !isCancelled) {
           const sess = res.data;
-          setSessionId(sess.sessionId);
-          setPhoneConnected(Boolean(sess.phoneConnected));
 
-          // If pipeline is paused at Stage 3, check if NFC data arrived
-          if (pipelinePausedAt === 3 && sess.nfcResult) {
-            handleResumeAfterNfc(sess.nfcResult);
-          }
+          // Only sync if session belongs to active desktop verification session
+          if (sess.sessionId === activeSessionIdRef.current) {
+            setPhoneConnected(Boolean(sess.phoneConnected));
 
-          // If pipeline is paused at Stage 6, check if Face data arrived
-          if (pipelinePausedAt === 6 && sess.faceResult) {
-            handleResumeAfterFace(sess.faceResult);
+            // If pipeline is paused at Stage 3, check if NFC data arrived for this session
+            if (
+              pipelinePausedAt === 3 &&
+              sess.nfcResult &&
+              (!sess.nfcResult.sessionId || sess.nfcResult.sessionId === activeSessionIdRef.current)
+            ) {
+              handleResumeAfterNfc(sess.nfcResult);
+            }
+
+            // If pipeline is paused at Stage 6, check if Face data arrived for this session
+            if (
+              pipelinePausedAt === 6 &&
+              sess.faceResult &&
+              (!sess.faceResult.sessionId || sess.faceResult.sessionId === activeSessionIdRef.current)
+            ) {
+              handleResumeAfterFace(sess.faceResult);
+            }
+          } else if (!activeSessionIdRef.current) {
+            setSessionId(sess.sessionId);
+            activeSessionIdRef.current = sess.sessionId;
+            setPhoneConnected(Boolean(sess.phoneConnected));
           }
         }
       } catch {
@@ -536,8 +682,10 @@ export function App() {
   // Fallback / Demonstration Triggers for NFC & Face
   const handleSimulateNfc = async (forceTampered: boolean = false) => {
     addToast('info', 'Simulating NFC Credential...', forceTampered ? 'Injecting DOB mismatch' : 'Injecting clean chip payload');
+    const currentActiveSession = activeSessionIdRef.current;
     try {
       const res = await apiClient.verifyNfc({
+        sessionId: currentActiveSession,
         printedData: documentData,
         nfcData: JSON.stringify({
           documentId: documentData.documentNumber,
@@ -555,6 +703,8 @@ export function App() {
     } catch {
       // Local fallback
       const localResult: NfcResult = {
+        sessionId: currentActiveSession,
+        documentNumber: documentData.documentNumber,
         moduleName: 'NFC-Based Prototype Credential Verification',
         isPrototype: true,
         disclaimer: 'DEMO / PROTOTYPE MODULE: Demonstrates secure NFC cross-verification.',
@@ -592,43 +742,33 @@ export function App() {
   };
 
   const handleSimulateFace = async (forceMismatch: boolean = false) => {
-    addToast('info', 'Simulating Face Capture...', forceMismatch ? 'Injecting identity mismatch' : 'Injecting high likeness match');
-    const simulatedFace: FaceResult = {
-      matchScore: forceMismatch ? 32 : 94,
-      confidence: forceMismatch ? 88.0 : 96.2,
-      liveness: 'PASS',
-      documentFaceDetected: true,
-      liveFaceDetected: true,
-      status: forceMismatch ? 'FAIL' : 'PASS',
-      statusExplanation: forceMismatch
-        ? 'Facial similarity (32%) falls well below biometric match threshold (75%). Identity mismatch suspected.'
-        : 'Facial biometrics match across 68 landmark vectors. Active liveness confirmed.',
-      livePhotoUrl: documentData.livePhotoUrl,
-    };
+    addToast('info', 'Testing Face Biometrics...', forceMismatch ? 'Testing non-matching face specimen' : 'Testing matching live selfie specimen');
+    const currentActiveSession = activeSessionIdRef.current;
+
+    // Use real decodable image inputs: document portrait + live test specimen
+    const docPhoto = uploadedDocument?.file || documentData.photoBase64 || documentData.photoUrl || '/images/passport_photo.jpg';
+    const livePhoto = forceMismatch ? '/images/admin_mehta.jpg' : '/images/live_capture.jpg';
 
     try {
-      await apiClient.request('/v1/face/verify', {
-        method: 'POST',
-        body: JSON.stringify({
-          sessionId,
-          livePhoto: documentData.livePhotoUrl,
-          forceMismatch,
-        }),
+      const realFaceResult = await FaceService.verify(docPhoto, livePhoto, {
+        sessionId: currentActiveSession,
+        file: uploadedDocument?.file,
       });
-    } catch {
-      // ignore
-    }
 
-    if (pipelinePausedAt === 6) {
-      handleResumeAfterFace(simulatedFace);
-    } else {
-      setFaceResult(simulatedFace);
+      if (pipelinePausedAt === 6) {
+        handleResumeAfterFace(realFaceResult);
+      } else {
+        setFaceResult(realFaceResult);
+      }
+    } catch (err: any) {
+      console.error('[Face] Face test execution failed:', err);
+      addToast('error', 'Face Verification Error', err.message || 'Failed to verify face');
     }
   };
 
   const handleRequestFaceCapture = async () => {
     try {
-      await apiClient.requestFaceCapture(sessionId);
+      await apiClient.requestFaceCapture(activeSessionIdRef.current);
       addToast(
         'info',
         'Face Capture Broadcasted',
@@ -640,30 +780,9 @@ export function App() {
   };
 
   // Initial verification state preparation so detailed report modal has content immediately
-  useEffect(() => {
-    if (uploadedDocument) {
-      return;
-    }
-
-    let isMounted = true;
-
-    VerificationService.runVerification(
-      documentData,
-      selectedScenario
-    ).then((res) => {
-      if (isMounted) {
-        setVerificationResult(res);
-      }
-    });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedScenario, documentData, uploadedDocument]);
-
   // Upload / Replace Image Handler
   const handleFileUpload = useCallback(
-    (file: File) => {
+    async (file: File) => {
       // 1. Clean up prior object URL to prevent memory leaks
       cleanupObjectUrl();
 
@@ -685,16 +804,29 @@ export function App() {
       setUploadedDocument(newDocRecord);
 
       // 4. Construct real document input for VerificationService
+      let photoBase64: string | undefined;
+      try {
+        photoBase64 = await readFileAsBase64(file);
+      } catch (readErr) {
+        console.warn('[PRAMAAN] Could not read uploaded file as base64:', readErr);
+      }
+
       const documentInput = VerificationService.createDocumentInputFromUpload(
         file,
         previewUrl,
         activeType,
         VerificationService.getDocumentData(activeType)
       );
+      if (photoBase64) {
+        documentInput.photoBase64 = photoBase64;
+      }
       setDocumentData(documentInput);
       setInvestigationStatus('unflagged');
 
-      // 5. Reset pipeline to READY status (8 stages)
+      // 5. Initialize isolated verification session on backend and frontend (Step 2 & 5)
+      await startNewVerificationSession(documentInput);
+
+      // 6. Reset pipeline to READY status (8 stages)
       setCurrentStep(1);
       setStepStates({
         1: 'COMPLETED',
@@ -708,6 +840,9 @@ export function App() {
       });
       setNfcResult(null);
       setFaceResult(null);
+      setRiskResult(null);
+      setVerificationResult(null);
+      setTamperingResult(null);
       setPipelinePausedAt(null);
       setStepMessages({ 1: `Ingested ${file.name} (${(file.size / 1024).toFixed(1)} KB)` });
 
@@ -719,20 +854,24 @@ export function App() {
 
       setActiveNav('dashboard');
     },
-    [activeType, cleanupObjectUrl, addToast]
+    [activeType, cleanupObjectUrl, startNewVerificationSession, addToast]
   );
 
   // Remove / Reset Uploaded Document
-  const handleResetDocument = useCallback(() => {
+  const handleResetDocument = useCallback(async () => {
     cleanupObjectUrl();
     setUploadedDocument(null);
     setNfcResult(null);
     setFaceResult(null);
+    setRiskResult(null);
+    setVerificationResult(null);
+    setTamperingResult(null);
     setPipelinePausedAt(null);
     setIsSimulating(false);
     const baseline = VerificationService.getDocumentData(activeType);
     setDocumentData(baseline);
     setInvestigationStatus('unflagged');
+    await startNewVerificationSession(baseline);
     setCurrentStep(1);
     setStepStates({
       1: 'NOT_STARTED',
@@ -746,7 +885,7 @@ export function App() {
     });
     setStepMessages({});
     addToast('info', 'Document Removed', `Restored default ${activeType.toUpperCase()} template.`);
-  }, [activeType, cleanupObjectUrl, addToast]);
+  }, [activeType, cleanupObjectUrl, startNewVerificationSession, addToast]);
 
   // Camera Scan Capture (unified with File Upload)
   const handleCameraCapture = (file: File) => {
@@ -798,6 +937,8 @@ export function App() {
     setUploadedDocument(null);
     setNfcResult(null);
     setFaceResult(null);
+    setRiskResult(null);
+    setTamperingResult(null);
     setPipelinePausedAt(null);
     setIsSimulating(false);
     const baseline = VerificationService.getDocumentData(activeType);
@@ -1065,7 +1206,7 @@ export function App() {
 
                 <FaceVerificationCard
                   data={documentData}
-                  faceResult={faceResult || verificationResult?.faceVerification}
+                  faceResult={stepStates[6] === 'COMPLETED' || stepStates[6] === 'WARNING' || stepStates[6] === 'FAILED' ? faceResult : null}
                   stepStatus={stepStates[6] || 'NOT_STARTED'}
                   phoneConnected={phoneConnected}
                   sessionId={sessionId}
@@ -1075,6 +1216,8 @@ export function App() {
 
                 <RiskAssessmentCard
                   data={documentData}
+                  riskResult={stepStates[7] === 'COMPLETED' || stepStates[7] === 'WARNING' || stepStates[7] === 'FAILED' ? riskResult : null}
+                  stepStatus={stepStates[7] || 'NOT_STARTED'}
                   onOpenReport={() => setIsReportModalOpen(true)}
                 />
 

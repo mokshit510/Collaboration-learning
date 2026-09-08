@@ -1,9 +1,20 @@
 import BackendNfcService from '../services/nfcService.js';
+import sessionService from '../services/sessionService.js';
 import { sendSuccess, sendError } from '../utils/response.js';
 
 export class NfcController {
   static verify(req, res) {
     try {
+      const sessionId = req.body?.sessionId || req.body?.session_id;
+      if (sessionId && sessionService.activeSessionId && sessionId !== sessionService.activeSessionId) {
+        return sendError(
+          res,
+          'The provided NFC credential belongs to a stale or completed verification session.',
+          409,
+          'STALE_VERIFICATION_SESSION'
+        );
+      }
+
       const nfcResult = BackendNfcService.verifyNfcCredential(req.body || {});
       // Return both wrapped format and spread for maximum Android reader compatibility
       return res.status(200).json({

@@ -13,10 +13,10 @@ export const TamperingAnalysisCard: React.FC<TamperingAnalysisCardProps> = ({
   onInspectElement,
 }) => {
   const anomaliesCount = data.suspiciousElements?.length || 0;
-  const isTampered = anomaliesCount > 0 || data.riskScore > 50;
+  const isTampered = anomaliesCount > 0 || ((data.riskScore ?? 0) > 50);
 
   // Approximate tampering score (or derive from data)
-  const tamperingScore = isTampered ? Math.max(data.riskScore, 75) : 8;
+  const tamperingScore = isTampered ? Math.max(data.riskScore ?? 0, 75) : 8;
   const verdict =
     tamperingScore >= 60
       ? 'EVIDENT_TAMPERING'

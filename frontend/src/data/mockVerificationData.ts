@@ -3,32 +3,32 @@ import type { DocumentData } from '../types';
 export const mockPassportData: DocumentData = {
   type: 'passport',
   title: 'REPUBLIC OF INDIA PASSPORT',
-  documentNumber: 'T1234567',
+  documentNumber: 'T1234587',
   holderName: 'RAHUL SHARMA',
   givenName: 'RAHUL',
   surname: 'SHARMA',
   nationality: 'INDIAN',
-  dob: '14/02/1999',
+  dob: '15/01/2005',
   gender: 'MALE',
-  placeOfBirth: 'NEW DELHI',
-  issueDate: '10/01/2020',
-  expiryDate: '09/01/2030',
+  placeOfBirth: 'PUNE',
+  issueDate: '15/01/2025',
+  expiryDate: '14/01/2035',
   countryCode: 'IND',
   mrzLine1: 'P<INDSHARMA<<RAHUL<<<<<<<<<<<<<<<<<<<<<<<<<<<',
-  mrzLine2: 'T1234567<8IND9902145M3001097<<<<<<<<<<<<<<<',
+  mrzLine2: 'T1234587<3IND0501150M3501140<<<<<<<<<<<<<<<6',
   photoUrl: '/images/passport_photo.jpg',
-  livePhotoUrl: '/images/live_capture.jpg',
-  processingTime: '12.4 seconds',
+  livePhotoUrl: undefined,
+  processingTime: '0.0 seconds',
   
   ocrFields: [
     { label: 'Full Name', value: 'RAHUL SHARMA', confidence: 99.4, valid: true },
-    { label: 'Passport No.', value: 'T1234567', confidence: 98.9, valid: true },
+    { label: 'Passport No.', value: 'T1234587', confidence: 98.9, valid: true },
     { label: 'Nationality', value: 'INDIAN', confidence: 99.8, valid: true },
-    { label: 'Date of Birth', value: '14/02/1999', confidence: 97.6, valid: true },
+    { label: 'Date of Birth', value: '15/01/2005', confidence: 97.6, valid: true },
     { label: 'Gender', value: 'MALE', confidence: 99.1, valid: true },
-    { label: 'Place of Birth', value: 'NEW DELHI', confidence: 98.5, valid: true },
-    { label: 'Date of Issue', value: '10/01/2020', confidence: 98.2, valid: true },
-    { label: 'Date of Expiry', value: '09/01/2030', confidence: 99.0, valid: true },
+    { label: 'Place of Birth', value: 'PUNE', confidence: 98.5, valid: true },
+    { label: 'Date of Issue', value: '15/01/2025', confidence: 98.2, valid: true },
+    { label: 'Date of Expiry', value: '14/01/2035', confidence: 99.0, valid: true },
   ],
 
   validationItems: [
@@ -46,54 +46,9 @@ export const mockPassportData: DocumentData = {
     { id: 'issuer_match', label: 'Issuer Match', status: 'Valid', valid: true, detail: 'RPO Delhi digital signature verified' },
   ],
 
-  suspiciousElements: [
-    {
-      id: 'photo_tamper',
-      title: 'Possible photo manipulation',
-      confidenceLevel: 'High confidence',
-      severity: 'high',
-      description: 'Discontinuity detected along portrait perimeter; potential digital re-insertion or overlay detected.',
-      location: 'Visual Inspection Zone (Photo Box)',
-    },
-    {
-      id: 'text_inconsistency',
-      title: 'Text area inconsistency (DOB)',
-      confidenceLevel: 'Medium confidence',
-      severity: 'medium',
-      description: 'Font kerning and pixel sub-sampling variance detected in date of birth numerical glyphs.',
-      location: 'Field: Date of Birth',
-    },
-    {
-      id: 'compression_artifacts',
-      title: 'Compression artifacts detected',
-      confidenceLevel: 'Medium confidence',
-      severity: 'medium',
-      description: 'Double JPEG compression grid boundary detected in header and issuing authority stamp.',
-      location: 'Document Header / Issuing Seal',
-    },
-    {
-      id: 'texture_irregularity',
-      title: 'Stamp/texture irregularity',
-      confidenceLevel: 'Low confidence',
-      severity: 'low',
-      description: 'Guilloche wave pattern micro-alignment deviation < 1.2% in lower margin.',
-      location: 'Background Guilloche Band',
-    },
-  ],
-
-  faceMatchScore: 94,
-  faceMatchStatus: 'Faces match',
-  riskScore: 78,
-  riskLevel: 'HIGH RISK',
-  riskDescription: 'This document shows multiple signs of tampering. Further manual inspection is recommended.',
-  riskContributors: [
-    { category: 'Tampering Analysis', points: 35, description: 'Photo border splicing & font pixel inconsistencies' },
-    { category: 'Document anomalies', points: 28, description: 'Double compression artifacts & guilloche deviation' },
-    { category: 'Validation', points: 15, description: 'Secondary checksum verification variance' },
-    { category: 'Face verification', points: 0, description: 'High biometric match confidence (94%)' },
-    { category: 'Issuer verification', points: 0, description: 'Simulated issuer record returned positive active status' },
-  ],
-  aiSummary: 'The document is structurally valid and found in issuer database. However, AI analysis detected possible photo manipulation and inconsistencies in the date of birth region. Face verification matches. Overall risk is HIGH. Recommended: Manual inspection and further verification.',
+  suspiciousElements: [],
+  riskContributors: [],
+  aiSummary: 'Awaiting pipeline execution. Ingest a document and click "Run Pipeline" to perform verification.',
 };
 
 export const mockVisaData: DocumentData = {
@@ -113,8 +68,8 @@ export const mockVisaData: DocumentData = {
   mrzLine1: 'VNINDSHARMA<<RAHUL<<<<<<<<<<<<<<<<<<<<<<<<<<<',
   mrzLine2: 'V9842104<8IND9902145M2803145<<<<<<<<<<<<<<<',
   photoUrl: '/images/passport_photo.jpg',
-  livePhotoUrl: '/images/live_capture.jpg',
-  processingTime: '8.7 seconds',
+  livePhotoUrl: undefined,
+  processingTime: '0.0 seconds',
   
   ocrFields: [
     { label: 'Full Name', value: 'RAHUL SHARMA', confidence: 99.6, valid: true },
@@ -143,19 +98,8 @@ export const mockVisaData: DocumentData = {
   ],
 
   suspiciousElements: [],
-  faceMatchScore: 96,
-  faceMatchStatus: 'Faces match',
-  riskScore: 12,
-  riskLevel: 'LOW RISK',
-  riskDescription: 'Document is authentic with valid holographic seals and clean simulated registry checks.',
-  riskContributors: [
-    { category: 'Tampering Analysis', points: 0, description: 'No signs of tampering or digital alteration' },
-    { category: 'Document anomalies', points: 5, description: 'Minor scanner shadow on upper margin' },
-    { category: 'Validation', points: 7, description: 'Standard consular check sequence completed' },
-    { category: 'Face verification', points: 0, description: 'High biometric match confidence (96%)' },
-    { category: 'Issuer verification', points: 0, description: 'Consular registry confirmed active status' },
-  ],
-  aiSummary: 'Visa record is fully authentic and validated against simulated immigration databases. Biometric facial matching completed with 96% confidence. Low risk detected. Recommended for standard clearance.',
+  riskContributors: [],
+  aiSummary: 'Awaiting pipeline execution. Ingest a document and click "Run Pipeline" to perform verification.',
 };
 
 export const mockOtherDocData: DocumentData = {
@@ -175,8 +119,8 @@ export const mockOtherDocData: DocumentData = {
   mrzLine1: 'ISIND902188<<7<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<',
   mrzLine2: '9902145M3108214IND<<<<<<<<<<<<<<9',
   photoUrl: '/images/passport_photo.jpg',
-  livePhotoUrl: '/images/live_capture.jpg',
-  processingTime: '9.3 seconds',
+  livePhotoUrl: undefined,
+  processingTime: '0.0 seconds',
 
   ocrFields: [
     { label: 'Full Name', value: 'RAHUL SHARMA', confidence: 98.4, valid: true },
@@ -204,27 +148,7 @@ export const mockOtherDocData: DocumentData = {
     { id: 'issuer_match', label: 'Issuer Match', status: 'Valid', valid: true, detail: 'Port officer verification valid' },
   ],
 
-  suspiciousElements: [
-    {
-      id: 'emboss_wear',
-      title: 'Embossing texture variance',
-      confidenceLevel: 'Low confidence',
-      severity: 'low',
-      description: 'Slight wear along gold foil stamp; consistent with physical maritime usage.',
-      location: 'Booklet Cover Foil Stamp',
-    },
-  ],
-  faceMatchScore: 93,
-  faceMatchStatus: 'Faces match',
-  riskScore: 24,
-  riskLevel: 'LOW RISK',
-  riskDescription: 'Seafarer record matches maritime registry. Minor physical document wear detected.',
-  riskContributors: [
-    { category: 'Tampering Analysis', points: 10, description: 'Minor foil wear' },
-    { category: 'Document anomalies', points: 4, description: 'Booklet creasing' },
-    { category: 'Validation', points: 10, description: 'Port clearance check completed' },
-    { category: 'Face verification', points: 0, description: 'Facial similarity 93%' },
-    { category: 'Issuer verification', points: 0, description: 'DG Shipping simulated lookup confirmed' },
-  ],
-  aiSummary: 'Maritime credential verified against simulated DG Shipping database. Facial biometrics matched with 93% similarity. Low overall risk. Cleared for maritime entry.',
+  suspiciousElements: [],
+  riskContributors: [],
+  aiSummary: 'Awaiting pipeline execution. Ingest a document and click "Run Pipeline" to perform verification.',
 };

@@ -109,21 +109,22 @@ export interface DocumentData {
   mrzLine1: string;
   mrzLine2: string;
   photoUrl: string;
-  livePhotoUrl: string;
+  livePhotoUrl?: string;
   ocrFields: OcrField[];
   validationItems: ValidationItem[];
   issuerItems: IssuerItem[];
   suspiciousElements: SuspiciousElement[];
-  faceMatchScore: number;
-  faceMatchStatus: string;
-  riskScore: number;
-  riskLevel: 'LOW RISK' | 'MEDIUM RISK' | 'HIGH RISK';
-  riskDescription: string;
-  riskContributors: RiskContributor[];
+  faceMatchScore?: number | null;
+  faceMatchStatus?: string | null;
+  riskScore?: number | null;
+  riskLevel?: 'LOW RISK' | 'MEDIUM RISK' | 'HIGH RISK' | null;
+  riskDescription?: string | null;
+  riskContributors?: RiskContributor[];
   aiSummary: string;
   processingTime: string;
   isUserUploaded?: boolean;
   rawImagePreviewUrl?: string;
+  photoBase64?: string;
   uploadedFile?: {
     name: string;
     size: number;
@@ -158,6 +159,8 @@ export interface OcrResult {
     givenNames?: string;
     mrzDetected?: boolean;
     mrzComplete?: boolean;
+    genderRaw?: string;
+    nationalityRaw?: string;
     line1?: string;
     line2?: string;
     checksumStatus?: Record<string, string>;
@@ -165,7 +168,9 @@ export interface OcrResult {
     checksumDetails?: Record<string, boolean>;
     parseWarnings?: string[];
   };
+  overallConfidence?: number;
   rawText?: string;
+  debugImageBase64?: string;
   averageConfidence: number;
   qualityStatus: 'OPTIMAL' | 'MODERATE' | 'LOW';
   confidenceSource?: string;
@@ -198,7 +203,7 @@ export interface ValidationResult {
   warningCount: number;
   failedCount: number;
   checks: ValidationRuleCheck[];
-  mrzChecksumDetails: {
+  mrzChecksumDetails?: {
     docNumberValid: boolean;
     dobValid: boolean;
     expiryValid: boolean;
@@ -216,7 +221,7 @@ export interface ReferenceFieldMismatch {
 export interface SyntheticReferenceRecord {
   id?: string;
   documentNumber: string;
-  documentType: string;
+  documentType?: string;
   countryCode?: string;
   fullName?: string;
   surname?: string;
@@ -289,14 +294,26 @@ export interface TamperingResult {
 }
 
 export interface FaceResult {
+  sessionId?: string;
+  documentNumber?: string;
   matchScore: number;
-  confidence: number;
-  liveness: 'PASS' | 'REVIEW' | 'FAIL';
+  confidence?: number;
+  liveness: 'PASS' | 'REVIEW' | 'FAIL' | 'NOT_EVALUATED';
   documentFaceDetected: boolean;
   liveFaceDetected: boolean;
   status: 'PASS' | 'REVIEW' | 'FAIL';
   statusExplanation: string;
   livePhotoUrl?: string;
+  verifiedAt?: string;
+  details?: {
+    verified?: boolean;
+    distance?: number | null;
+    threshold?: number | null;
+    orientationAdjusted?: number;
+    model?: string;
+    metric?: string;
+    error?: string | null;
+  };
 }
 
 export interface NfcCredentialPayload {
@@ -312,6 +329,8 @@ export interface NfcCredentialPayload {
 }
 
 export interface NfcResult {
+  sessionId?: string;
+  documentNumber?: string;
   moduleName: string;
   isPrototype: boolean;
   disclaimer: string;
@@ -327,6 +346,7 @@ export interface NfcResult {
   integrityVerified: boolean;
   status: 'PASS' | 'WARNING' | 'FAIL';
   explanation: string;
+  verifiedAt?: string;
 }
 
 export interface ReferenceSecurityCheck {
@@ -392,6 +412,7 @@ export interface EvidenceItem {
   impactPoints: number;
   summary: string;
   technicalFinding: string;
+  metadata?: Record<string, any>;
 }
 
 export interface AuditTrailEntry {
