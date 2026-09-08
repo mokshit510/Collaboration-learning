@@ -1,97 +1,29 @@
-# ==============================================================================
-# Git Ignore Configuration for PRAMAAN (SIH26188)
-# AI-Based Fake Identity & Document Screening System
-# ==============================================================================
+# Dependencies & Build artifacts
+node_modules/
+dist/
+dist-ssr/
+frontend/dist/
+frontend/node_modules/
 
-# --- Secrets & Environment Files (CRITICAL: NEVER COMMIT) ---
+# Environment and secrets
 .env
 .env.*
-*.env
 !.env.example
-backend/.env
-frontend/.env
-ai-services/**/.env
+*.pem
+*.key
+secrets/
 
-# --- Node / JavaScript Dependencies ---
-node_modules/
-*/node_modules/
-**/node_modules/
-.pnp
-.pnp.js
-
-# --- Python Virtual Environments & Bytecode ---
-__pycache__/
-*/__pycache__/
-**/__pycache__/
-*.py[cod]
-*$py.class
-.venv/
-*/.venv/
-**/.venv/
-venv/
-*/venv/
-env/
-*/env/
-ENV/
-*.egg-info/
-.installed.cfg
-*.egg
-.pytest_cache/
-.coverage
-htmlcov/
-
-# --- Build Outputs ---
-dist/
-*/dist/
-**/dist/
-build/
-*/build/
-**/build/
-dist-ssr/
-*.tsbuildinfo
-
-# --- Logs & Debug Outputs ---
-*.log
+# Logs & Editor
 logs/
-*/logs/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# --- Temporary, Cache & Scratch Files ---
-.cache/
-.parcel-cache/
-tmp/
-*/tmp/
-temp/
-*/temp/
-.temp/
-*.tmp
-scratch/
-
-# --- Operating System & Editor Files ---
+*.log
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+.vscode/
 .idea/
-.vscode/*
-!.vscode/extensions.json
-!.vscode/settings.json
-*.sublime-project
-*.sublime-workspace
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
 
-# --- Local Uploads & Test Output Images ---
-uploads/
-*/uploads/
-**/uploads/
+# Python & AI Service
+ai-service/venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+ai-service/*.jpg

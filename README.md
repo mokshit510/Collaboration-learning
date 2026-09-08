@@ -29,7 +29,7 @@ Frontline border checkpoints and immigration counters face severe verification b
 1. **Sophisticated Forgeries:** Modern synthetic credentials utilize authentic passport blanks with spliced portraits, altered birth dates, or re-printed biographical text zones that evade visual inspection.
 2. **Fragmented Workflows:** Officers must juggle separate MRZ optical readers, stand-alone UV lamps, disconnected database lookups, and biometric cameras without a single correlated dossier.
 3. **Black-Box AI Fallacy:** Generic "deep learning fake detector" demos produce unexplainable scores without showing *where* or *why* an anomaly occurred, making them legally inadmissible and operationally unusable.
-4. **Offline Checkpoint Constraints:** Remote border checkpoints often suffer from intermittent internet connectivity and cannot rely solely on live central cloud lookups.
+
 
 ---
 
