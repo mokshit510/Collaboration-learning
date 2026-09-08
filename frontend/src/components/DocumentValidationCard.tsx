@@ -6,14 +6,29 @@ interface DocumentValidationCardProps {
   items: ValidationItem[];
 }
 
-export const DocumentValidationCard: React.FC<DocumentValidationCardProps> = ({ items }) => {
-  const failedCount = items.filter(
-    (i) => i.valid === false || i.severity === 'FAIL' || i.status.toLowerCase().includes('fail')
-  ).length;
+const DEFAULT_PLACEHOLDER_ITEMS: ValidationItem[] = [
+  { id: 'format', label: 'Document Format', status: '—', valid: true },
+  { id: 'mrz', label: 'MRZ Consistency', status: '—', valid: true },
+  { id: 'fields', label: 'Field Validations', status: '—', valid: true },
+  { id: 'expiry', label: 'Expiry Check', status: '—', valid: true },
+  { id: 'required', label: 'Required Fields', status: '—', valid: true },
+];
 
-  const warningCount = items.filter(
-    (i) => i.severity === 'WARNING' || i.status.toLowerCase().includes('warn') || i.status.toLowerCase().includes('review')
-  ).length;
+export const DocumentValidationCard: React.FC<DocumentValidationCardProps> = ({ items }) => {
+  const displayItems = items.length > 0 ? items : DEFAULT_PLACEHOLDER_ITEMS;
+  const isPrePipeline = displayItems.every((i) => !i.status || i.status === '—' || i.status === '-');
+
+  const failedCount = isPrePipeline
+    ? 0
+    : displayItems.filter(
+        (i) => i.valid === false || i.severity === 'FAIL' || i.status.toLowerCase().includes('fail')
+      ).length;
+
+  const warningCount = isPrePipeline
+    ? 0
+    : displayItems.filter(
+        (i) => i.severity === 'WARNING' || i.status.toLowerCase().includes('warn') || i.status.toLowerCase().includes('review')
+      ).length;
 
   return (
     <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs p-4 flex flex-col justify-between">
@@ -29,14 +44,18 @@ export const DocumentValidationCard: React.FC<DocumentValidationCardProps> = ({ 
 
           <span
             className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
-              failedCount > 0
+              isPrePipeline
+                ? 'bg-slate-100 text-slate-500 border-slate-200'
+                : failedCount > 0
                 ? 'bg-red-50 text-red-700 border-red-200'
                 : warningCount > 0
                 ? 'bg-amber-50 text-amber-700 border-amber-200'
                 : 'bg-emerald-50 text-emerald-700 border-emerald-200'
             }`}
           >
-            {failedCount > 0
+            {isPrePipeline
+              ? 'Pending'
+              : failedCount > 0
               ? `${failedCount} Failed`
               : warningCount > 0
               ? `${warningCount} Warning`
@@ -50,19 +69,23 @@ export const DocumentValidationCard: React.FC<DocumentValidationCardProps> = ({ 
 
         {/* Checklist Rows */}
         <div className="space-y-1.5">
-          {items.map((item) => {
+          {displayItems.map((item) => {
+            const isPlaceholder = !item.status || item.status === '—' || item.status === '-';
+
             const isFailed =
-              item.valid === false ||
-              item.severity === 'FAIL' ||
-              item.status.toLowerCase().includes('fail') ||
-              item.status.toLowerCase().includes('expired');
+              !isPlaceholder &&
+              (item.valid === false ||
+                item.severity === 'FAIL' ||
+                item.status.toLowerCase().includes('fail') ||
+                item.status.toLowerCase().includes('expired'));
 
             const isWarning =
-              item.severity === 'WARNING' ||
-              item.status.toLowerCase().includes('warn') ||
-              item.status.toLowerCase().includes('review');
+              !isPlaceholder &&
+              (item.severity === 'WARNING' ||
+                item.status.toLowerCase().includes('warn') ||
+                item.status.toLowerCase().includes('review'));
 
-            const isPass = !isFailed && !isWarning;
+            const isPass = !isPlaceholder && !isFailed && !isWarning;
 
             return (
               <div
@@ -72,6 +95,11 @@ export const DocumentValidationCard: React.FC<DocumentValidationCardProps> = ({ 
               >
                 {/* Left: Icon & Label */}
                 <div className="flex items-center gap-2 min-w-0">
+                  {isPlaceholder && (
+                    <span className="w-4 text-center text-slate-300 font-mono text-xs shrink-0 select-none">
+                      —
+                    </span>
+                  )}
                   {isPass && <CheckCircle2 className="w-4 h-4 text-[#16A34A] shrink-0" />}
                   {isWarning && <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />}
                   {isFailed && <XCircle className="w-4 h-4 text-[#DC2626] shrink-0" />}
@@ -84,14 +112,16 @@ export const DocumentValidationCard: React.FC<DocumentValidationCardProps> = ({ 
                 {/* Right: Status Text */}
                 <span
                   className={`text-[11.5px] font-bold tracking-tight shrink-0 ${
-                    isPass
+                    isPlaceholder
+                      ? 'text-slate-400 font-mono font-normal'
+                      : isPass
                       ? 'text-[#16A34A]'
                       : isWarning
                       ? 'text-amber-600'
                       : 'text-[#DC2626]'
                   }`}
                 >
-                  {item.status}
+                  {item.status || '—'}
                 </span>
               </div>
             );

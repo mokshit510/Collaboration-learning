@@ -9,22 +9,20 @@ const allowedMimeTypes = [
   'image/jpg',
   'image/png',
   'image/webp',
-  'application/pdf',
 ];
 
 const fileFilter = (req, file, cb) => {
   if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(
-      new Error(`Unsupported file type: ${file.mimetype}. Allowed types: JPEG, PNG, WEBP, PDF`),
-      false
-    );
+    const err = new Error('Only JPG, JPEG, PNG or WEBP images up to 2 MB are allowed.');
+    err.statusCode = 400;
+    cb(err, false);
   }
 };
 
 const limits = {
-  fileSize: config.upload.maxSizeMb * 1024 * 1024, // e.g. 10MB
+  fileSize: 2 * 1024 * 1024, // 2MB
   files: 5,
 };
 

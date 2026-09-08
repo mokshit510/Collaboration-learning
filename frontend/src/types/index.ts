@@ -40,6 +40,8 @@ export interface OcrField {
   confidence: number;
   valid: boolean;
   status?: 'PASS' | 'WARNING' | 'FAIL';
+  confidenceSource?: string;
+  lowConfidence?: boolean;
 }
 
 export interface ValidationItem {
@@ -135,10 +137,35 @@ export interface OcrResult {
     expiryDate: string;
     optionalData?: string;
     compositeChecksumValid: boolean;
+    // MRZ metadata extensions
+    surname?: string;
+    givenName?: string;
+    givenNames?: string;
+    mrzDetected?: boolean;
+    mrzComplete?: boolean;
+    line1?: string;
+    line2?: string;
+    checksumStatus?: Record<string, string>;
+    checksumValidation?: Record<string, string>;
+    checksumDetails?: Record<string, boolean>;
+    parseWarnings?: string[];
   };
   rawText?: string;
   averageConfidence: number;
   qualityStatus: 'OPTIMAL' | 'MODERATE' | 'LOW';
+  confidenceSource?: string;
+  mrz?: Record<string, unknown>;
+  mrzValidation?: Record<string, unknown>;
+  vizDetected?: boolean;
+  vizFields?: OcrField[];
+  vizWarnings?: string[];
+  validation?: Array<{
+    field: string;
+    value: string;
+    status: string;
+    message: string;
+  }>;
+  warnings?: string[];
 }
 
 export interface ValidationRuleCheck {

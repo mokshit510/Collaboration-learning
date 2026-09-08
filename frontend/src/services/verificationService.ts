@@ -51,7 +51,6 @@ import { FaceService } from './faceService';
 import { NfcService } from './nfcService';
 import { ReferenceEngine } from './referenceEngine';
 import { WatchlistService } from './watchlistService';
-import { EvidenceFusion } from './evidenceFusion';
 import { RiskEngine } from './riskEngine';
 import { RecordsStorage } from './recordsStorage';
 import apiClient from './apiClient';
@@ -59,7 +58,13 @@ import apiClient from './apiClient';
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export interface PipelineProgressCallback {
-  (stepIndex: number, stepName: string, stepStatus: PipelineStepStatus, details?: string): void;
+  (
+    stepIndex: number,
+    stepName: string,
+    stepStatus: PipelineStepStatus,
+    details?: string,
+    intermediateDoc?: DocumentData
+  ): void;
 }
 
 export class VerificationService {
@@ -137,6 +142,143 @@ export class VerificationService {
         lastModified: file.lastModified,
       },
       photoUrl: previewUrl,
+      documentNumber: '',
+      holderName: '',
+      givenName: '',
+      surname: '',
+      nationality: '',
+      dob: '',
+      gender: '',
+      placeOfBirth: '',
+      issueDate: '',
+      expiryDate: '',
+      countryCode: '',
+      mrzLine1: '',
+      mrzLine2: '',
+      ocrFields: [
+        { label: 'Full Name', value: '—', confidence: 0, valid: true },
+        { label: type === 'passport' ? 'Passport Number' : type === 'visa' ? 'Visa Number' : 'Document Number', value: '—', confidence: 0, valid: true },
+        { label: 'Nationality', value: '—', confidence: 0, valid: true },
+        { label: 'Date of Birth', value: '—', confidence: 0, valid: true },
+        { label: 'Gender', value: '—', confidence: 0, valid: true },
+        { label: 'Place of Birth', value: '—', confidence: 0, valid: true },
+        { label: 'Date of Issue', value: '—', confidence: 0, valid: true },
+        { label: 'Date of Expiry', value: '—', confidence: 0, valid: true },
+      ],
+      validationItems: [
+        { id: 'format', label: 'Document Format', status: '—', valid: true },
+        { id: 'mrz', label: 'MRZ Consistency', status: '—', valid: true },
+        { id: 'fields', label: 'Field Validations', status: '—', valid: true },
+        { id: 'expiry', label: 'Expiry Check', status: '—', valid: true },
+        { id: 'required', label: 'Required Fields', status: '—', valid: true },
+      ],
+      issuerItems: [
+        { id: 'db_lookup', label: 'Passport No. in Database', status: '—', valid: true },
+        { id: 'status', label: 'Status', status: '—', valid: true },
+        { id: 'blacklist', label: 'Blacklist Check', status: '—', valid: true },
+        { id: 'issuer_match', label: 'Issuer Match', status: '—', valid: true },
+      ],
+      suspiciousElements: [],
+      riskContributors: [],
+    };
+  }
+
+  /**
+   * Apply OCR extraction results to DocumentData structure for downstream modules.
+   * Maps extracted visual VIZ fields into standard DocumentData fields without
+   * overwriting with empty/undefined values, using MRZ as fallback, or using mock values.
+   */
+  public static applyOcrResultToDocument(
+    doc: DocumentData,
+    ocrResult: OcrResult
+  ): DocumentData {
+    const getFieldValue = (...labels: string[]): string | undefined => {
+      const field = ocrResult.fields.find(
+        (f) =>
+          labels.some((l) => l.toLowerCase() === f.label.toLowerCase()) &&
+          f.value !== undefined &&
+          f.value !== null &&
+          f.value.trim() !== '' &&
+          f.value.trim() !== '—' &&
+          f.value.trim() !== '-'
+      );
+      return field?.value?.trim();
+    };
+
+    const fullName = getFieldValue('Full Name', 'Name');
+    const surname = getFieldValue('Surname');
+    const givenName = getFieldValue('Given Names', 'Given Name');
+    const passportNumber = getFieldValue(
+      'Passport Number',
+      'Passport No.',
+      'Passport No',
+      'Visa Number',
+      'Certificate No.',
+      'Document Number'
+    );
+    const nationality = getFieldValue('Nationality');
+    const dob = getFieldValue('Date of Birth', 'DOB');
+    const expiryDate = getFieldValue('Date of Expiry', 'Expiry Date', 'Expiry');
+    const gender = getFieldValue('Gender', 'Sex');
+    const placeOfBirth = getFieldValue('Place of Birth');
+    const issueDate = getFieldValue('Date of Issue', 'Issue Date');
+    const countryCode = getFieldValue('Country Code', 'Country');
+
+    let resolvedFullName = fullName || '';
+    let resolvedGivenName = givenName || '';
+    let resolvedSurname = surname || '';
+
+    if (!resolvedFullName && (resolvedGivenName || resolvedSurname)) {
+      resolvedFullName = `${resolvedGivenName} ${resolvedSurname}`.trim();
+    } else if (resolvedFullName && (!resolvedGivenName || !resolvedSurname)) {
+      const parts = resolvedFullName.split(/\s+/);
+      if (parts.length > 1) {
+        resolvedSurname = resolvedSurname || parts[parts.length - 1];
+        resolvedGivenName = resolvedGivenName || parts.slice(0, -1).join(' ');
+      } else {
+        resolvedGivenName = resolvedGivenName || parts[0] || '';
+      }
+    }
+
+    let resolvedCountryCode = countryCode || doc.countryCode;
+    if (nationality) {
+      const natUpper = nationality.toUpperCase();
+      if (natUpper === 'INDIAN' || natUpper === 'IND') {
+        resolvedCountryCode = 'IND';
+      } else if (natUpper.length === 3) {
+        resolvedCountryCode = natUpper;
+      }
+    }
+
+    // MRZ data (kept independently from VIZ)
+    const mrzLine1 =
+      ocrResult.mrzParsed?.line1 ||
+      (ocrResult as any).mrz?.line1 ||
+      doc.mrzLine1 ||
+      '';
+    const mrzLine2 =
+      ocrResult.mrzParsed?.line2 ||
+      (ocrResult as any).mrz?.line2 ||
+      doc.mrzLine2 ||
+      '';
+
+    return {
+      ...doc,
+      title: `${doc.type.toUpperCase()} — ${resolvedFullName || doc.uploadedFile?.name || 'Uploaded Document'}`,
+      holderName: resolvedFullName || doc.holderName,
+      givenName: resolvedGivenName || doc.givenName,
+      surname: resolvedSurname || doc.surname,
+      documentNumber: passportNumber || doc.documentNumber,
+      nationality: nationality || doc.nationality,
+      countryCode: resolvedCountryCode,
+      dob: dob || doc.dob,
+      expiryDate: expiryDate || doc.expiryDate,
+      gender: gender || doc.gender,
+      placeOfBirth: placeOfBirth || doc.placeOfBirth,
+      issueDate: issueDate || doc.issueDate,
+      mrzLine1,
+      mrzLine2,
+      ocrFields: ocrResult.fields,
     };
   }
 
@@ -149,10 +291,12 @@ export class VerificationService {
     confidenceModifier: number = 1.0,
     uploadedFile?: File
   ): Promise<OcrResult> {
-    if (doc.isUserUploaded && uploadedFile) {
+    if (doc.isUserUploaded) {
+      if (!uploadedFile) {
+        throw new Error('Uploaded document file is missing for OCR.');
+      }
       try {
-        console.log('[OCR] Running real backend OCR...');
-
+        console.log('[OCR] Running real backend OCR on uploaded file...');
         return await apiClient.runOcr(uploadedFile, type);
       } catch (error) {
         console.error('[OCR] Backend OCR failed:', error);
@@ -336,36 +480,28 @@ export class VerificationService {
       ocrAuditDetail,
       performance.now() - t0
     );
-    onStepProgress?.(2, 'OCR Extraction', ocrStatus, `${ocrResult.averageConfidence}% confidence`);
+    // ----------------------------------------------------
+    // Propagate OCR results into DocumentData
+    // ----------------------------------------------------
+    const ocrDocument: DocumentData = doc.isUserUploaded
+      ? this.applyOcrResultToDocument(doc, ocrResult)
+      : doc;
+
+    onStepProgress?.(
+      2,
+      'OCR Extraction',
+      ocrStatus,
+      `${ocrResult.averageConfidence}% confidence`,
+      ocrDocument
+    );
 
     // ----------------------------------------------------
     // STEP 3: Document Validation
     // ----------------------------------------------------
     t0 = performance.now();
     onStepProgress?.(3, 'Validation', 'PROCESSING', 'Executing ICAO 9303 checksums & chronological validation');
-    // For uploaded documents, validation must use the data actually
-    // extracted by OCR instead of the original demo/baseline document.
-    const documentForValidation: DocumentData = doc.isUserUploaded
-      ? {
-        ...doc,
-        documentNumber:
-          ocrResult.fields.find((f) => f.label === 'Passport Number')?.value ?? '',
-        holderName:
-          ocrResult.fields.find((f) => f.label === 'Full Name')?.value ?? '',
-        nationality:
-          ocrResult.fields.find((f) => f.label === 'Nationality')?.value ?? '',
-        dob:
-          ocrResult.fields.find((f) => f.label === 'Date of Birth')?.value ?? '',
-        expiryDate:
-          ocrResult.fields.find((f) => f.label === 'Date of Expiry')?.value ?? '',
-        gender:
-          ocrResult.fields.find((f) => f.label === 'Gender')?.value ?? '',
-        mrzLine1: '',
-        mrzLine2: '',
-      }
-      : doc;
 
-    const validationResult = await this.validateDocument(documentForValidation, {
+    const validationResult = await this.validateDocument(ocrDocument, {
       forceExpired: isExpiredScenario,
       forceMismatchedMrz: isTamperedScenario,
     });
@@ -389,7 +525,7 @@ export class VerificationService {
     // ----------------------------------------------------
     t0 = performance.now();
     onStepProgress?.(4, 'Issuer Verification', 'PROCESSING', 'Querying simulated registry records');
-    const issuerResult = await this.verifyIssuer(doc, {
+    const issuerResult = await this.verifyIssuer(ocrDocument, {
       forceExpired: isExpiredScenario,
     });
     const issStatus: PipelineStepStatus =
@@ -410,7 +546,7 @@ export class VerificationService {
     // ----------------------------------------------------
     t0 = performance.now();
     onStepProgress?.(5, 'Tampering Analysis', 'PROCESSING', 'Forensic Vision Transformer & artifact boundary scan');
-    const tamperingResult = await this.analyzeTampering(doc, {
+    const tamperingResult = await this.analyzeTampering(ocrDocument, {
       forceTampered: isTamperedScenario,
       forceClean: scenarioId === 'genuine',
     });
@@ -434,7 +570,7 @@ export class VerificationService {
     // ----------------------------------------------------
     t0 = performance.now();
     onStepProgress?.(6, 'Face Verification', 'PROCESSING', 'Biometric landmark alignment & liveness verification');
-    const faceResult = await this.verifyFace(doc.photoUrl, doc.livePhotoUrl);
+    const faceResult = await this.verifyFace(ocrDocument.photoUrl, ocrDocument.livePhotoUrl);
     const faceStatus: PipelineStepStatus = faceResult.status === 'FAIL' ? 'FAILED' : faceResult.status === 'REVIEW' ? 'WARNING' : 'COMPLETED';
     recordAudit(
       6,
@@ -451,13 +587,13 @@ export class VerificationService {
     t0 = performance.now();
     onStepProgress?.(7, 'Risk Assessment', 'PROCESSING', 'Fusing NFC, Reference specimen & Lookout records');
 
-    const nfcResult = await this.verifyNFC(doc, {
+    const nfcResult = await this.verifyNFC(ocrDocument, {
       forceMismatch: isTamperedScenario,
     });
-    const referenceResult = await this.compareReference(doc, {
+    const referenceResult = await this.compareReference(ocrDocument, {
       forceLayoutVariance: isTamperedScenario,
     });
-    const watchlistResult = await this.checkWatchlist(doc.documentNumber, doc.holderName, {
+    const watchlistResult = await this.checkWatchlist(ocrDocument.documentNumber, ocrDocument.holderName, {
       forceMatch: isWatchlistScenario,
     });
 
@@ -470,75 +606,97 @@ export class VerificationService {
     );
 
     // ----------------------------------------------------
-    // EVIDENCE FUSION & RISK CALCULATION
+    // FINAL VERIFICATION STATUS (Excluding Risk Assessment)
     // ----------------------------------------------------
-    const evidence = EvidenceFusion.fuse({
-      ocr: ocrResult,
-      validation: validationResult,
-      issuer: issuerResult,
-      tampering: tamperingResult,
-      face: faceResult,
-      nfc: nfcResult,
-      reference: referenceResult,
-      watchlist: watchlistResult,
-    });
+    let overallVerificationStatus: VerificationResult['status'] = 'COMPLETED';
 
-    const riskResult = this.calculateRisk(evidence);
+    const isValidationFail = validationResult.overallStatus === 'FAIL';
+    const isTamperingFail = tamperingResult.tamperingScore >= 60;
+    const isFaceFail = faceResult.status === 'FAIL';
+    const isIssuerFail = issuerResult.registryStatus === 'REVOKED' || issuerResult.registryStatus === 'NOT_FOUND';
 
-    const overallVerificationStatus: VerificationResult['status'] =
-      riskResult.level === 'HIGH' ? 'FAILED' : riskResult.level === 'MEDIUM' ? 'WARNING' : 'COMPLETED';
+    const isValidationWarn = validationResult.overallStatus === 'WARNING';
+    const isTamperingWarn = tamperingResult.tamperingScore >= 30;
+    const isFaceWarn = faceResult.status === 'REVIEW';
+    const isIssuerWarn = issuerResult.registryStatus === 'EXPIRED' || issuerResult.registryStatus === 'SUSPENDED';
+
+    if (isValidationFail || isTamperingFail || isFaceFail || isIssuerFail) {
+      overallVerificationStatus = 'FAILED';
+    } else if (isValidationWarn || isTamperingWarn || isFaceWarn || isIssuerWarn) {
+      overallVerificationStatus = 'WARNING';
+    } else {
+      overallVerificationStatus = 'COMPLETED';
+    }
 
     recordAudit(
-      8,
+      7,
       'Complete',
       overallVerificationStatus === 'FAILED' ? 'FAILED' : overallVerificationStatus === 'WARNING' ? 'WARNING' : 'COMPLETED',
-      `Final Risk Score: ${riskResult.score}/100 (${riskResult.level}). Recommendation: ${riskResult.recommendation}.`,
+      `Verification complete. Status: ${overallVerificationStatus}. Validation: ${validationResult.overallStatus}, Issuer: ${issuerResult.registryStatus}, Tampering: ${tamperingResult.verdict}, Face: ${faceResult.status}.`,
       performance.now() - startTime
     );
 
-    onStepProgress?.(8, 'Complete', overallVerificationStatus === 'FAILED' ? 'FAILED' : 'COMPLETED', `${riskResult.level} RISK`);
+    onStepProgress?.(
+      7,
+      'Complete',
+      overallVerificationStatus === 'FAILED' ? 'FAILED' : 'COMPLETED',
+      `Status: ${overallVerificationStatus}`
+    );
 
     // Generate actionable recommendations
     const recommendations: string[] = [];
-    if (riskResult.level === 'HIGH') {
+    if (overallVerificationStatus === 'FAILED') {
       recommendations.push('Immediate manual secondary inspection recommended.');
       if (tamperingResult.tamperingScore >= 60) {
         recommendations.push('Inspect physical document under forensic UV & oblique lighting for portrait replacement.');
       }
-      if (nfcResult.status !== 'PASS') {
-        recommendations.push('Verify physical credential against secure smart card reader / consular database.');
+      if (validationResult.overallStatus === 'FAIL') {
+        recommendations.push('Review document checksums and formatting inconsistencies.');
       }
-      if (watchlistResult.status === 'MATCH_FOUND') {
-        recommendations.push('Alert checkpoint supervisory officer regarding active lookout circular.');
+      if (faceResult.status === 'FAIL') {
+        recommendations.push('Biometric match failure; verify physical bearer.');
       }
-    } else if (riskResult.level === 'MEDIUM') {
+    } else if (overallVerificationStatus === 'WARNING') {
       recommendations.push('Manual scrutiny of optical fields recommended.');
       recommendations.push('Request clear high-resolution document scan.');
     } else {
-      recommendations.push('Standard clearance. All biometric and security checks passed within threshold.');
+      recommendations.push('Standard clearance. All biometric, issuer, and forensic checks passed within threshold.');
     }
+
+    // Default RiskResult conforming to interface without running riskEngine.ts
+    const riskResult: RiskResult = {
+      score: 0,
+      level: overallVerificationStatus === 'FAILED' ? 'HIGH' : overallVerificationStatus === 'WARNING' ? 'MEDIUM' : 'LOW',
+      factors: [],
+      explanation: `Screening complete: Validation (${validationResult.overallStatus}), Issuer (${issuerResult.registryStatus}), Tampering (${tamperingResult.verdict}), Face (${faceResult.status}).`,
+      recommendation: overallVerificationStatus === 'FAILED'
+        ? 'Detailed forensic inspection recommended'
+        : overallVerificationStatus === 'WARNING'
+        ? 'Manual review recommended'
+        : 'Likely clear — Standard processing',
+    };
 
     // Build upgraded DocumentData object with updated fields
     const updatedDocumentData: DocumentData = {
-      ...doc,
+      ...ocrDocument,
       ocrFields: ocrResult.fields,
       validationItems: ValidationEngine.toLegacyValidationItems(validationResult),
       issuerItems: IssuerService.toLegacyIssuerItems(issuerResult),
       suspiciousElements: TamperingService.toLegacySuspiciousElements(tamperingResult),
       faceMatchScore: faceResult.matchScore,
       faceMatchStatus: faceResult.status === 'PASS' ? 'Faces match' : 'Biometric review required',
-      riskScore: riskResult.score,
-      riskLevel: `${riskResult.level} RISK` as 'LOW RISK' | 'MEDIUM RISK' | 'HIGH RISK',
-      riskDescription: riskResult.explanation,
-      riskContributors: RiskEngine.toLegacyRiskContributors(riskResult),
-      aiSummary: `${riskResult.explanation} Recommendation: ${riskResult.recommendation}.`,
+      riskScore: 0,
+      riskLevel: overallVerificationStatus === 'FAILED' ? 'HIGH RISK' : overallVerificationStatus === 'WARNING' ? 'MEDIUM RISK' : 'LOW RISK',
+      riskDescription: '',
+      riskContributors: [],
+      aiSummary: `Screening complete. Validation: ${validationResult.overallStatus} • Issuer: ${issuerResult.registryStatus} • Tampering: ${tamperingResult.verdict} • Face Match: ${faceResult.matchScore}%. Overall Status: ${overallVerificationStatus}.`,
       processingTime: `${((performance.now() - startTime) / 1000).toFixed(1)} seconds`,
     };
 
     return {
       verificationId,
       status: overallVerificationStatus,
-      documentType: doc.type,
+      documentType: ocrDocument.type,
       timestamp,
       document: updatedDocumentData,
       ocr: ocrResult,
@@ -550,7 +708,7 @@ export class VerificationService {
       referenceComparison: referenceResult,
       watchlist: watchlistResult,
       risk: riskResult,
-      evidence,
+      evidence: [],
       recommendations,
       auditTrail,
     };

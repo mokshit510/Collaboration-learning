@@ -56,7 +56,7 @@ export class ApiClient {
     if (!this.token && typeof window !== 'undefined') {
       this.token = localStorage.getItem('pramaan_token');
     }
-    return this.token || 'mock-jwt-b1a2c3d4-0001-4000-8000-000000000001';
+    return this.token || 'mock-jwt';
   }
 
   public clearToken() {
@@ -263,3 +263,6 @@ export class ApiClient {
 
 export const apiClient = new ApiClient();
 export default apiClient;
+
+console.log('[PRAMAAN] API mode:', apiClient.getMode());
+console.log('[PRAMAAN] API base URL:', API_BASE_URL);

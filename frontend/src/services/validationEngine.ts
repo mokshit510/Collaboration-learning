@@ -41,25 +41,39 @@ export class ValidationEngine {
   }
 
   /**
-   * Parse DD/MM/YYYY or YYYY-MM-DD into Date object safely
+   * Parse DD/MM/YYYY, YYYY-MM-DD, or DD MMM YYYY into Date object safely
    */
   private static parseDate(dateStr: string): Date | null {
     if (!dateStr) return null;
-    const slashParts = dateStr.split('/');
+    const cleanStr = dateStr.trim();
+    const slashParts = cleanStr.split('/');
     if (slashParts.length === 3) {
       const d = parseInt(slashParts[0], 10);
       const m = parseInt(slashParts[1], 10) - 1;
       const y = parseInt(slashParts[2], 10);
       return new Date(y, m, d);
     }
-    const dashParts = dateStr.split('-');
+    const dashParts = cleanStr.split('-');
     if (dashParts.length === 3) {
       const y = parseInt(dashParts[0], 10);
       const m = parseInt(dashParts[1], 10) - 1;
       const d = parseInt(dashParts[2], 10);
       return new Date(y, m, d);
     }
-    const parsed = new Date(dateStr);
+    const spaceParts = cleanStr.split(/\s+/);
+    if (spaceParts.length === 3) {
+      const months: Record<string, number> = {
+        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+      };
+      const d = parseInt(spaceParts[0], 10);
+      const mStr = spaceParts[1].substring(0, 3).toLowerCase();
+      const y = parseInt(spaceParts[2], 10);
+      if (!isNaN(d) && months[mStr] !== undefined && !isNaN(y)) {
+        return new Date(y, months[mStr], d);
+      }
+    }
+    const parsed = new Date(cleanStr);
     return isNaN(parsed.getTime()) ? null : parsed;
   }
 
@@ -73,7 +87,9 @@ export class ValidationEngine {
     const checks: ValidationRuleCheck[] = [];
 
     // 1. Required Fields Check
-    const requiredFields = ['documentNumber', 'nationality', 'dob', 'issueDate', 'expiryDate'];
+    const requiredFields = doc.isUserUploaded
+      ? ['documentNumber', 'nationality', 'dob', 'expiryDate']
+      : ['documentNumber', 'nationality', 'dob', 'issueDate', 'expiryDate'];
     const missing = requiredFields.filter((f) => !doc[f as keyof DocumentData]);
     if (missing.length === 0) {
       checks.push({
@@ -95,7 +111,7 @@ export class ValidationEngine {
 
     // 2. Passport / Document Number Format Check
     const docNumRegex = /^[A-Z0-9-]{6,12}$/i;
-    if (docNumRegex.test(doc.documentNumber)) {
+    if (doc.documentNumber && docNumRegex.test(doc.documentNumber)) {
       checks.push({
         id: 'val_doc_format',
         ruleName: 'Document Number Format',
@@ -109,7 +125,7 @@ export class ValidationEngine {
         ruleName: 'Document Number Format',
         field: 'Document Number',
         status: 'FAIL',
-        explanation: `Document identifier does not conform to standard format specifications: ${doc.documentNumber}.`,
+        explanation: `Document identifier does not conform to standard format specifications: ${doc.documentNumber || '(empty)'}.`,
       });
     }
 
@@ -236,67 +252,100 @@ export class ValidationEngine {
       if (!isNaN(mrzExpCheck)) {
         expiryValid = computedExpCheck === mrzExpCheck;
       }
-    }
 
-    if (docNumberValid && dobValid && expiryValid && compositeValid) {
-      checks.push({
-        id: 'val_mrz_checksum',
-        ruleName: 'ICAO 9303 MRZ Checksum Algorithms',
-        field: 'MRZ Check Digits',
-        status: 'PASS',
-        explanation: 'All ICAO 9303 7-3-1 modulus-10 check digits verified: Document No, DOB, Expiry, and Composite.',
-      });
+      if (docNumberValid && dobValid && expiryValid && compositeValid) {
+        checks.push({
+          id: 'val_mrz_checksum',
+          ruleName: 'ICAO 9303 MRZ Checksum Algorithms',
+          field: 'MRZ Check Digits',
+          status: 'PASS',
+          explanation: 'All ICAO 9303 7-3-1 modulus-10 check digits verified: Document No, DOB, Expiry, and Composite.',
+        });
+      } else {
+        checks.push({
+          id: 'val_mrz_checksum',
+          ruleName: 'ICAO 9303 MRZ Checksum Algorithms',
+          field: 'MRZ Check Digits',
+          status: 'FAIL',
+          explanation: 'MRZ check digit validation failed. Mathematical integrity check mismatch indicates possible tampering.',
+        });
+      }
     } else {
+      docNumberValid = false;
+      dobValid = false;
+      expiryValid = false;
+      compositeValid = false;
+
       checks.push({
         id: 'val_mrz_checksum',
         ruleName: 'ICAO 9303 MRZ Checksum Algorithms',
         field: 'MRZ Check Digits',
-        status: 'FAIL',
-        explanation: 'MRZ check digit validation failed. Mathematical integrity check mismatch indicates possible tampering.',
+        status: 'WARNING',
+        explanation: 'MRZ stream not detected or incomplete. Mathematical check digits unavailable for optical verification.',
       });
     }
 
     // 7. Visual Inspection Zone (VIZ) vs MRZ Consistency
-    const docNumInMrz = (doc.mrzLine2 || '').includes(doc.documentNumber.replace(/[^A-Z0-9]/gi, ''));
-    if (docNumInMrz && !options.forceMismatchedMrz) {
-      checks.push({
-        id: 'val_viz_mrz_cross',
-        ruleName: 'VIZ to MRZ Cross-Check',
-        field: 'Biographical Cross-Check',
-        status: 'PASS',
-        explanation: 'Printed text fields (Document No, Surname, Given Name) correlate with MRZ data.',
-      });
+    if (mrzClean.length >= 20) {
+      const docNumInMrz = (doc.mrzLine2 || '').includes(doc.documentNumber.replace(/[^A-Z0-9]/gi, ''));
+      if (docNumInMrz && !options.forceMismatchedMrz) {
+        checks.push({
+          id: 'val_viz_mrz_cross',
+          ruleName: 'VIZ to MRZ Cross-Check',
+          field: 'Biographical Cross-Check',
+          status: 'PASS',
+          explanation: 'Printed text fields (Document No, Surname, Given Name) correlate with MRZ data.',
+        });
+      } else {
+        checks.push({
+          id: 'val_viz_mrz_cross',
+          ruleName: 'VIZ to MRZ Cross-Check',
+          field: 'Biographical Cross-Check',
+          status: 'WARNING',
+          explanation: 'Discrepancy detected between printed Visual Inspection Zone and machine-readable data strip.',
+        });
+      }
     } else {
       checks.push({
         id: 'val_viz_mrz_cross',
         ruleName: 'VIZ to MRZ Cross-Check',
         field: 'Biographical Cross-Check',
         status: 'WARNING',
-        explanation: 'Discrepancy detected between printed Visual Inspection Zone and machine-readable data strip.',
+        explanation: 'MRZ data strip unavailable. Visual Inspection Zone correlation cannot be established.',
       });
     }
 
     // 8. Document Type Consistency Check
-    const mrzDocTypeChar = doc.mrzLine1?.charAt(0) || 'P';
-    if (
-      (doc.type === 'passport' && mrzDocTypeChar === 'P') ||
-      (doc.type === 'visa' && (mrzDocTypeChar === 'V' || mrzDocTypeChar === 'I')) ||
-      doc.type === 'other'
-    ) {
-      checks.push({
-        id: 'val_doctype_match',
-        ruleName: 'Document Type Specification Match',
-        field: 'Document Header / MRZ Code',
-        status: 'PASS',
-        explanation: `Physical document classification (${doc.type}) matches header descriptor and security standard.`,
-      });
+    const mrzDocTypeChar = doc.mrzLine1 ? doc.mrzLine1.charAt(0) : undefined;
+    if (mrzDocTypeChar) {
+      if (
+        (doc.type === 'passport' && mrzDocTypeChar === 'P') ||
+        (doc.type === 'visa' && (mrzDocTypeChar === 'V' || mrzDocTypeChar === 'I')) ||
+        doc.type === 'other'
+      ) {
+        checks.push({
+          id: 'val_doctype_match',
+          ruleName: 'Document Type Specification Match',
+          field: 'Document Header / MRZ Code',
+          status: 'PASS',
+          explanation: `Physical document classification (${doc.type}) matches header descriptor and security standard.`,
+        });
+      } else {
+        checks.push({
+          id: 'val_doctype_match',
+          ruleName: 'Document Type Specification Match',
+          field: 'Document Header / MRZ Code',
+          status: 'WARNING',
+          explanation: `Header document type (${doc.type}) does not match MRZ standard prefix (${mrzDocTypeChar}).`,
+        });
+      }
     } else {
       checks.push({
         id: 'val_doctype_match',
         ruleName: 'Document Type Specification Match',
-        field: 'Document Header / MRZ Code',
-        status: 'WARNING',
-        explanation: `Header document type (${doc.type}) does not match MRZ standard prefix (${mrzDocTypeChar}).`,
+        field: 'Document Header / Type',
+        status: 'PASS',
+        explanation: `Physical document classification verified as ${doc.type.toUpperCase()}.`,
       });
     }
 

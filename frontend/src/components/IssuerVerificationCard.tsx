@@ -6,7 +6,41 @@ interface IssuerVerificationCardProps {
   items: IssuerItem[];
 }
 
+const DEFAULT_PLACEHOLDER_ISSUER_ITEMS: IssuerItem[] = [
+  {
+    id: 'db_lookup',
+    label: 'Passport No. in Database',
+    status: '—',
+    valid: true,
+    detail: 'Awaiting pipeline execution',
+  },
+  {
+    id: 'status',
+    label: 'Status',
+    status: '—',
+    valid: true,
+    detail: 'Awaiting pipeline execution',
+  },
+  {
+    id: 'blacklist',
+    label: 'Blacklist Check',
+    status: '—',
+    valid: true,
+    detail: 'Awaiting pipeline execution',
+  },
+  {
+    id: 'issuer_match',
+    label: 'Issuer Match',
+    status: '—',
+    valid: true,
+    detail: 'Awaiting pipeline execution',
+  },
+];
+
 export const IssuerVerificationCard: React.FC<IssuerVerificationCardProps> = ({ items }) => {
+  const displayItems = items.length > 0 ? items : DEFAULT_PLACEHOLDER_ISSUER_ITEMS;
+  const isPrePipeline = displayItems.every((i) => !i.status || i.status === '—' || i.status === '-');
+
   return (
     <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs p-4 flex flex-col justify-between">
       <div>
@@ -18,8 +52,12 @@ export const IssuerVerificationCard: React.FC<IssuerVerificationCardProps> = ({ 
               4. Issuer Verification <span className="text-slate-500 font-semibold">(Simulated)</span>
             </h3>
           </div>
-          <span className="text-[9px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
-            Simulated Registry
+          <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${
+            isPrePipeline
+              ? 'bg-slate-100 text-slate-500 border-slate-200'
+              : 'text-blue-700 bg-blue-50 border-blue-200'
+          }`}>
+            {isPrePipeline ? 'Pending' : 'Simulated Registry'}
           </span>
         </div>
 
@@ -29,23 +67,26 @@ export const IssuerVerificationCard: React.FC<IssuerVerificationCardProps> = ({ 
 
         {/* Status Rows */}
         <div className="space-y-1.5">
-          {items.map((item) => {
-            const statusLower = item.status.toLowerCase();
+          {displayItems.map((item) => {
+            const isPlaceholder = !item.status || item.status === '—' || item.status === '-';
+            const statusLower = (item.status || '').toLowerCase();
             const isFailed =
-              item.valid === false ||
-              item.severity === 'FAIL' ||
-              statusLower.includes('revoked') ||
-              statusLower.includes('expired') ||
-              statusLower.includes('flagged') ||
-              statusLower.includes('not found') ||
-              statusLower.includes('hit found');
+              !isPlaceholder &&
+              (item.valid === false ||
+                item.severity === 'FAIL' ||
+                statusLower.includes('revoked') ||
+                statusLower.includes('expired') ||
+                statusLower.includes('flagged') ||
+                statusLower.includes('not found') ||
+                statusLower.includes('hit found'));
 
             const isWarning =
-              item.severity === 'WARNING' ||
-              statusLower.includes('review') ||
-              statusLower.includes('suspend');
+              !isPlaceholder &&
+              (item.severity === 'WARNING' ||
+                statusLower.includes('review') ||
+                statusLower.includes('suspend'));
 
-            const isPass = !isFailed && !isWarning;
+            const isPass = !isPlaceholder && !isFailed && !isWarning;
 
             return (
               <div
@@ -55,6 +96,11 @@ export const IssuerVerificationCard: React.FC<IssuerVerificationCardProps> = ({ 
               >
                 {/* Left: Icon + Label */}
                 <div className="flex items-center gap-2 min-w-0">
+                  {isPlaceholder && (
+                    <span className="w-4 text-center text-slate-300 font-mono text-xs shrink-0 select-none">
+                      —
+                    </span>
+                  )}
                   {isPass && <CheckCircle2 className="w-4 h-4 text-[#16A34A] shrink-0" />}
                   {isWarning && <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />}
                   {isFailed && <XCircle className="w-4 h-4 text-[#DC2626] shrink-0" />}
@@ -67,14 +113,16 @@ export const IssuerVerificationCard: React.FC<IssuerVerificationCardProps> = ({ 
                 {/* Right: Status Text */}
                 <span
                   className={`text-[11.5px] font-bold tracking-tight shrink-0 ${
-                    isPass
+                    isPlaceholder
+                      ? 'text-slate-400 font-mono font-normal'
+                      : isPass
                       ? 'text-[#16A34A]'
                       : isWarning
                       ? 'text-amber-600'
                       : 'text-[#DC2626]'
                   }`}
                 >
-                  {item.status}
+                  {item.status || '—'}
                 </span>
               </div>
             );
