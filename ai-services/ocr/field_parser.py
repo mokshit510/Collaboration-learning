@@ -53,18 +53,21 @@ _VIZ_PATTERNS: dict[str, str] = {
     "Given Names": (
         r"(?:Given\s*Names?|Pr[eé]noms|[A-Za-z]*iven[A-Za-z]*)\s*[:/\-]?\s*\n?\s*([A-Z][A-Z ]+)"
     ),
+    "Full Name": (
+        r"(?:Full\s*Name|Name)\s*[:.\/\-]?\s*\n?\s*([A-Z][A-Z ]+)"
+    ),
     "Passport Number": (
-        r"(?:Passport\s*(?:No|Na|Number)?|Passeport\s*[Nn][o°])\s*[:.\/\-]?\s*([A-Z][0-9]{7})"
+        r"(?:Passport\s*(?:No|Na|Number)?|Passeport\s*[Nn][o°]|No\.?|Pa\s*No)\s*[:.\/\-]?\s*\n?\s*([A-Z][0-9]{7,8})"
     ),
     "Nationality": (
         r"(?:Nationality|Nationalit[eé])\s*[:/\-]?\s*\n?\s*([A-Z][A-Z ]+)"
     ),
     "Date of Birth": (
-        r"(?:Date\s*of\s*Birth|Date\s*de\s*naissance|DOB)\s*[:/\-]?\s*\n?\s*"
+        r"(?:Date\s*(?:of\s*Birth)?|Date\s*de\s*naissance|DOB|cete\s*of\s*girth)\s*[:/\-]?\s*\n?\s*"
         r"([0-9]{1,2}\s*[A-Z]{3}\s*[0-9]{4})"
     ),
     "Gender": (
-        r"(?:Sex|Sexe|Gender)\s*[:/\-]?\s*\n?\s*([MFX])"
+        r"(?:Sex|Sexe|Gender|Seve)\s*[:/\-]?\s*\n?\s*([MFX])"
     ),
     "Place of Birth": (
         r"(?:Place\s*of\s*Birth|Lieu\s*de\s*naissance)\s*[:/\-]?\s*\n?\s*([A-Z][A-Z ]+)"
@@ -74,14 +77,14 @@ _VIZ_PATTERNS: dict[str, str] = {
         r"([0-9]{1,2}\s*[A-Z]{3}\s*[0-9]{4})"
     ),
     "Date of Expiry": (
-        r"(?:Date\s*of\s*Expiry|Date\s*d.?expiration|Expiry|Expires)\s*[:/\-]?\s*\n?\s*"
+        r"(?:Date\s*(?:of\s*)?Expiry|Date\s*d.?expiration|Expiry|Expires)\s*[:/\-]?\s*\n?\s*"
         r"([0-9]{1,2}\s*[A-Z]{3}\s*[0-9]{4})"
     ),
     "Country Code": (
-        r"(?:Country\s*Code|Code\s*du\s*pays)\s*[:/\-]?\s*([A-Z]{3})"
+        r"(?:Country\s*Code|Code\s*du\s*pays|count\s*t\s*y)\s*[:/\-]?\s*\n?\s*([A-Z]{3})"
     ),
     "Document Type": (
-        r"(?:Type\s*/\s*Type)\s*[:/\-]?\s*([A-Z])"
+        r"(?:Type\s*/\s*Type|Type)\s*[:/\-]?\s*\n?\s*([A-Z])"
     ),
 }
 
@@ -183,6 +186,11 @@ def parse_fields(result: dict) -> list[dict]:
     # Fill gaps from regex fallback
     for fallback in _parse_fields_from_text(viz_text):
         if fallback["label"] not in seen_labels:
+            if fallback["label"] == "Full Name":
+                if "Surname" in seen_labels or "Given Names" in seen_labels:
+                    continue
+                if fallback["value"].strip().lower() in ("nom", "name", "surname", "f nom", "prenoms", "prénoms", "given"):
+                    continue
             fb_val = fallback["value"]
             if "Date" in fallback["label"] or "Birth" in fallback["label"] or "Issue" in fallback["label"] or "Expiry" in fallback["label"]:
                 fb_val = _normalize_viz_date(fb_val)
@@ -190,9 +198,31 @@ def parse_fields(result: dict) -> list[dict]:
             seen_labels.add(fallback["label"])
             merged.append(fallback)
 
-    # Build "Full Name" from Surname + Given Names if not already present
+    # Build "Full Name" from Surname + Given Names or vice versa
     label_map: dict[str, dict] = {f["label"]: f for f in merged}
-    if "Full Name" not in label_map:
+    if "Full Name" in label_map:
+        fn_val = label_map["Full Name"]["value"].strip()
+        parts = fn_val.split()
+        if len(parts) >= 2:
+            if "Given Names" not in label_map:
+                g_val = " ".join(parts[:-1])
+                merged.append({
+                    "label": "Given Names",
+                    "value": g_val,
+                    "confidence": label_map["Full Name"]["confidence"],
+                    "confidenceSource": "derived",
+                    "lowConfidence": label_map["Full Name"]["lowConfidence"],
+                })
+            if "Surname" not in label_map:
+                s_val = parts[-1]
+                merged.append({
+                    "label": "Surname",
+                    "value": s_val,
+                    "confidence": label_map["Full Name"]["confidence"],
+                    "confidenceSource": "derived",
+                    "lowConfidence": label_map["Full Name"]["lowConfidence"],
+                })
+    elif "Full Name" not in label_map:
         surname     = label_map.get("Surname", {}).get("value", "")
         given_names = label_map.get("Given Names", {}).get("value", "")
         if surname or given_names:

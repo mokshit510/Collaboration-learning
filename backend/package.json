@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node tests/health.test.js && node tests/integration.test.js"
+    "test": "node tests/health.test.js && node tests/integration.test.js && node tests/pipeline_gates.test.js"
   },
   "keywords": [
     "sih2026",

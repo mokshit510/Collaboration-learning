@@ -52,6 +52,7 @@ import { NfcService } from './nfcService';
 import { ReferenceEngine } from './referenceEngine';
 import { WatchlistService } from './watchlistService';
 import { RiskEngine } from './riskEngine';
+import { EvidenceFusion } from './evidenceFusion';
 import { RecordsStorage } from './recordsStorage';
 import apiClient from './apiClient';
 
@@ -407,7 +408,9 @@ export class VerificationService {
     doc: DocumentData,
     scenarioId?: DemoScenarioId,
     onStepProgress?: PipelineProgressCallback,
-    uploadedFile?: File
+    uploadedFile?: File,
+    nfcResultOverride?: NfcResult,
+    faceResultOverride?: FaceResult
   ): Promise<VerificationResult> {
     const startTime = performance.now();
     const verificationId = `PRM-2026-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -441,11 +444,11 @@ export class VerificationService {
     const isLowOcrScenario = scenarioId === 'low_ocr';
 
     // ----------------------------------------------------
-    // STEP 1: Document Upload & Preprocessing
+    // STAGE 1: Document Upload & Preprocessing
     // ----------------------------------------------------
     let t0 = performance.now();
     onStepProgress?.(1, 'Document Upload', 'PROCESSING', 'Ingesting document image & optical profile');
-    await delay(300);
+    await delay(250);
     const uploadAuditDetail = doc.uploadedFile
       ? `Ingested uploaded document: ${doc.uploadedFile.name} (${(doc.uploadedFile.size / 1024).toFixed(1)} KB) at 300 DPI optical fidelity.`
       : 'Document frame ingested at 300 DPI optical fidelity.';
@@ -458,7 +461,7 @@ export class VerificationService {
     );
 
     // ----------------------------------------------------
-    // STEP 2: OCR Extraction
+    // STAGE 2: OCR Extraction
     // ----------------------------------------------------
     t0 = performance.now();
     onStepProgress?.(2, 'OCR Extraction', 'PROCESSING', 'Segmenting Visual Inspection Zone & MRZ stream');
@@ -480,9 +483,7 @@ export class VerificationService {
       ocrAuditDetail,
       performance.now() - t0
     );
-    // ----------------------------------------------------
-    // Propagate OCR results into DocumentData
-    // ----------------------------------------------------
+
     const ocrDocument: DocumentData = doc.isUserUploaded
       ? this.applyOcrResultToDocument(doc, ocrResult)
       : doc;
@@ -496,10 +497,34 @@ export class VerificationService {
     );
 
     // ----------------------------------------------------
-    // STEP 3: Document Validation
+    // STAGE 3: NFC Input (From Phone) — GATE 1
     // ----------------------------------------------------
     t0 = performance.now();
-    onStepProgress?.(3, 'Validation', 'PROCESSING', 'Executing ICAO 9303 checksums & chronological validation');
+    onStepProgress?.(3, 'NFC Input (Phone)', 'PROCESSING', 'Cross-referencing printed text with digitally signed NFC chip');
+
+    const nfcResult = nfcResultOverride || (await this.verifyNFC(ocrDocument, {
+      forceMismatch: isTamperedScenario,
+    }));
+    const nfcStatus: PipelineStepStatus = nfcResult.status === 'PASS' ? 'COMPLETED' : 'WARNING';
+    recordAudit(
+      3,
+      'NFC Input (Phone)',
+      nfcStatus,
+      `NFC cross-verification status: ${nfcResult.readStatus}. ${nfcResult.explanation}`,
+      performance.now() - t0
+    );
+    onStepProgress?.(
+      3,
+      'NFC Input (Phone)',
+      nfcStatus,
+      nfcResult.readStatus === 'SUCCESS' ? 'Chip verified' : 'Mismatch detected'
+    );
+
+    // ----------------------------------------------------
+    // STAGE 4: Document Validation
+    // ----------------------------------------------------
+    t0 = performance.now();
+    onStepProgress?.(4, 'Document Validation', 'PROCESSING', 'Executing ICAO 9303 checksums & chronological validation');
 
     const validationResult = await this.validateDocument(ocrDocument, {
       forceExpired: isExpiredScenario,
@@ -512,94 +537,81 @@ export class VerificationService {
           ? 'WARNING'
           : 'COMPLETED';
     recordAudit(
-      3,
-      'Validation',
+      4,
+      'Document Validation',
       valStatus === 'FAILED' ? 'FAILED' : valStatus === 'WARNING' ? 'WARNING' : 'COMPLETED',
       `Validated ${validationResult.rulesChecked} rules. Result: ${validationResult.overallStatus}.`,
       performance.now() - t0
     );
-    onStepProgress?.(3, 'Validation', valStatus, `${validationResult.passedCount}/${validationResult.rulesChecked} rules passed`);
+    onStepProgress?.(4, 'Document Validation', valStatus, `${validationResult.passedCount}/${validationResult.rulesChecked} rules passed`);
 
     // ----------------------------------------------------
-    // STEP 4: Issuer Verification (Simulated)
+    // STAGE 5: Issuer + Tampering Analysis
     // ----------------------------------------------------
     t0 = performance.now();
-    onStepProgress?.(4, 'Issuer Verification', 'PROCESSING', 'Querying synthetic reference database');
+    onStepProgress?.(5, 'Issuer + Tampering', 'PROCESSING', 'Querying simulated issuer registry & running forensic vision AI');
+
     const issuerResult = await this.verifyIssuer(ocrDocument, {
       forceExpired: isExpiredScenario,
     });
-    const issStatus: PipelineStepStatus =
-      issuerResult.registryStatus === 'EXPIRED' ||
-      issuerResult.registryStatus === 'REVOKED' ||
-      issuerResult.registryStatus === 'BLACKLISTED' ||
-      issuerResult.registryStatus === 'MISMATCH' ||
-      issuerResult.registryStatus === 'NOT_FOUND'
-        ? (issuerResult.registryStatus === 'BLACKLISTED' || issuerResult.registryStatus === 'NOT_FOUND' ? 'FAILED' : 'WARNING')
-        : 'COMPLETED';
-
-    const ocrDocumentWithIssuer: DocumentData = {
-      ...ocrDocument,
-      issuerItems: IssuerService.toLegacyIssuerItems(issuerResult),
-      referenceComparison: issuerResult.referenceComparison,
-    };
-
-    recordAudit(
-      4,
-      'Issuer Verification',
-      issStatus === 'FAILED' ? 'FAILED' : issStatus === 'WARNING' ? 'WARNING' : 'COMPLETED',
-      `Reference database lookup returned status: ${issuerResult.registryStatus}.`,
-      performance.now() - t0
-    );
-    onStepProgress?.(4, 'Issuer Verification', issStatus, `Status: ${issuerResult.registryStatus}`, ocrDocumentWithIssuer);
-
-    // ----------------------------------------------------
-    // STEP 5: Tampering Analysis (AI Forensics)
-    // ----------------------------------------------------
-    t0 = performance.now();
-    onStepProgress?.(5, 'Tampering Analysis', 'PROCESSING', 'Forensic Vision Transformer & artifact boundary scan');
     const tamperingResult = await this.analyzeTampering(ocrDocument, {
       forceTampered: isTamperedScenario,
       forceClean: scenarioId === 'genuine',
     });
+
+    const isIssuerProblem =
+      issuerResult.registryStatus === 'EXPIRED' ||
+      issuerResult.registryStatus === 'REVOKED' ||
+      issuerResult.registryStatus === 'BLACKLISTED' ||
+      issuerResult.registryStatus === 'NOT_FOUND';
+    const isTamperProblem = tamperingResult.tamperingScore >= 30;
+
     const tampStatus: PipelineStepStatus =
-      tamperingResult.tamperingScore >= 60
+      tamperingResult.tamperingScore >= 60 || issuerResult.registryStatus === 'NOT_FOUND' || issuerResult.registryStatus === 'BLACKLISTED'
         ? 'FAILED'
-        : tamperingResult.tamperingScore >= 30
+        : isIssuerProblem || isTamperProblem
           ? 'WARNING'
           : 'COMPLETED';
+
+    const ocrDocumentWithForensics: DocumentData = {
+      ...ocrDocument,
+      issuerItems: IssuerService.toLegacyIssuerItems(issuerResult),
+      referenceComparison: issuerResult.referenceComparison,
+      suspiciousElements: TamperingService.toLegacySuspiciousElements(tamperingResult),
+    };
+
     recordAudit(
       5,
-      'Tampering Analysis',
-      tampStatus === 'FAILED' ? 'FAILED' : tampStatus === 'WARNING' ? 'WARNING' : 'COMPLETED',
-      `Forensic AI tamper score: ${tamperingResult.tamperingScore}/100 (${tamperingResult.verdict}).`,
+      'Issuer + Tampering',
+      tampStatus,
+      `Issuer status: ${issuerResult.registryStatus} (SIMULATED). Forensics tamper score: ${tamperingResult.tamperingScore}/100.`,
       performance.now() - t0
     );
-    onStepProgress?.(5, 'Tampering Analysis', tampStatus, `${tamperingResult.indicators.length} anomalies flagged`);
+    onStepProgress?.(5, 'Issuer + Tampering', tampStatus, `Score: ${tamperingResult.tamperingScore}/100 (${tamperingResult.verdict})`, ocrDocumentWithForensics);
 
     // ----------------------------------------------------
-    // STEP 6: Biometric Face Verification
+    // STAGE 6: Face Input (From Phone) — GATE 2
     // ----------------------------------------------------
     t0 = performance.now();
-    onStepProgress?.(6, 'Face Verification', 'PROCESSING', 'Biometric landmark alignment & liveness verification');
-    const faceResult = await this.verifyFace(ocrDocument.photoUrl, ocrDocument.livePhotoUrl);
-    const faceStatus: PipelineStepStatus = faceResult.status === 'FAIL' ? 'FAILED' : faceResult.status === 'REVIEW' ? 'WARNING' : 'COMPLETED';
+    onStepProgress?.(6, 'Face Input (Phone)', 'PROCESSING', 'Comparing document portrait with live mobile checkpoint feed');
+
+    const faceResult = faceResultOverride || (await this.verifyFace(
+      ocrDocument.photoUrl,
+      ocrDocument.livePhotoUrl,
+      { forceMismatch: isTamperedScenario }
+    ));
+    const faceStatus: PipelineStepStatus =
+      faceResult.status === 'FAIL' ? 'FAILED' : faceResult.status === 'REVIEW' ? 'WARNING' : 'COMPLETED';
     recordAudit(
       6,
-      'Face Verification',
-      faceStatus === 'FAILED' ? 'FAILED' : faceStatus === 'WARNING' ? 'WARNING' : 'COMPLETED',
+      'Face Input (Phone)',
+      faceStatus,
       `Biometric face match: ${faceResult.matchScore}% similarity. Liveness: ${faceResult.liveness}.`,
       performance.now() - t0
     );
-    onStepProgress?.(6, 'Face Verification', faceStatus, `${faceResult.matchScore}% match`);
+    onStepProgress?.(6, 'Face Input (Phone)', faceStatus, `${faceResult.matchScore}% match (Liveness: ${faceResult.liveness})`);
 
-    // ----------------------------------------------------
-    // Parallel auxiliary checks: NFC, Reference & Watchlist
-    // ----------------------------------------------------
-    t0 = performance.now();
-
-    const nfcResult = await this.verifyNFC(ocrDocument, {
-      forceMismatch: isTamperedScenario,
-    });
+    // Auxiliary checks: Reference & Watchlist
     const referenceResult = await this.compareReference(ocrDocument, {
       forceLayoutVariance: isTamperedScenario,
     });
@@ -607,58 +619,72 @@ export class VerificationService {
       forceMatch: isWatchlistScenario,
     });
 
+    // ----------------------------------------------------
+    // STAGE 7: Evidence Fusion + Risk Assessment
+    // ----------------------------------------------------
+    t0 = performance.now();
+    onStepProgress?.(7, 'Risk Assessment', 'PROCESSING', 'Fusing forensic evidence across all 8 vectors & computing risk matrix');
+
+    const evidence = EvidenceFusion.fuse({
+      ocr: ocrResult,
+      validation: validationResult,
+      issuer: issuerResult,
+      tampering: tamperingResult,
+      face: faceResult,
+      nfc: nfcResult,
+      reference: referenceResult,
+      watchlist: watchlistResult,
+    });
+
+    const riskResult = RiskEngine.calculate(evidence);
+    const legacyRiskContributors = RiskEngine.toLegacyRiskContributors(riskResult);
+
     recordAudit(
       7,
-      'NFC & Reference Checks',
-      nfcResult.status === 'PASS' ? 'COMPLETED' : 'WARNING',
-      `NFC cross-verification: ${nfcResult.readStatus}; Reference layout: ${referenceResult.layoutMatch}.`,
+      'Risk Assessment',
+      riskResult.level === 'HIGH' ? 'FAILED' : riskResult.level === 'MEDIUM' ? 'WARNING' : 'COMPLETED',
+      `Evidence fusion complete. Final Risk: ${riskResult.score}/100 (${riskResult.level}). ${riskResult.explanation}`,
       performance.now() - t0
     );
+    onStepProgress?.(7, 'Risk Assessment', 'COMPLETED', `Risk: ${riskResult.score}/100 (${riskResult.level})`);
 
     // ----------------------------------------------------
-    // FINAL VERIFICATION STATUS (Excluding Risk Assessment)
+    // STAGE 8: Verification Complete
     // ----------------------------------------------------
     let overallVerificationStatus: VerificationResult['status'] = 'COMPLETED';
 
-    const isValidationFail = validationResult.overallStatus === 'FAIL';
-    const isTamperingFail = tamperingResult.tamperingScore >= 60;
-    const isFaceFail = faceResult.status === 'FAIL';
-    const isIssuerFail = issuerResult.registryStatus === 'REVOKED' || issuerResult.registryStatus === 'NOT_FOUND';
-
-    const isValidationWarn = validationResult.overallStatus === 'WARNING';
-    const isTamperingWarn = tamperingResult.tamperingScore >= 30;
-    const isFaceWarn = faceResult.status === 'REVIEW';
-    const isIssuerWarn = issuerResult.registryStatus === 'EXPIRED' || issuerResult.registryStatus === 'SUSPENDED';
-
-    if (isValidationFail || isTamperingFail || isFaceFail || isIssuerFail) {
+    if (riskResult.level === 'HIGH' || valStatus === 'FAILED' || tampStatus === 'FAILED' || faceStatus === 'FAILED') {
       overallVerificationStatus = 'FAILED';
-    } else if (isValidationWarn || isTamperingWarn || isFaceWarn || isIssuerWarn) {
+    } else if (riskResult.level === 'MEDIUM' || valStatus === 'WARNING' || tampStatus === 'WARNING' || faceStatus === 'WARNING' || nfcStatus === 'WARNING') {
       overallVerificationStatus = 'WARNING';
     } else {
       overallVerificationStatus = 'COMPLETED';
     }
 
     recordAudit(
-      7,
+      8,
       'Complete',
       overallVerificationStatus === 'FAILED' ? 'FAILED' : overallVerificationStatus === 'WARNING' ? 'WARNING' : 'COMPLETED',
-      `Verification complete. Status: ${overallVerificationStatus}. Validation: ${validationResult.overallStatus}, Issuer: ${issuerResult.registryStatus}, Tampering: ${tamperingResult.verdict}, Face: ${faceResult.status}.`,
+      `Verification complete. Status: ${overallVerificationStatus}. Risk Score: ${riskResult.score}/100 (${riskResult.level}).`,
       performance.now() - startTime
     );
 
     onStepProgress?.(
-      7,
+      8,
       'Complete',
       overallVerificationStatus === 'FAILED' ? 'FAILED' : 'COMPLETED',
       `Status: ${overallVerificationStatus}`
     );
 
-    // Generate actionable recommendations
+    // Generate recommendations based on fused evidence
     const recommendations: string[] = [];
     if (overallVerificationStatus === 'FAILED') {
       recommendations.push('Immediate manual secondary inspection recommended.');
       if (tamperingResult.tamperingScore >= 60) {
         recommendations.push('Inspect physical document under forensic UV & oblique lighting for portrait replacement.');
+      }
+      if (nfcResult.readStatus === 'MISMATCH') {
+        recommendations.push('Chip credential contradicts optical text; seize physical specimen for counterfeit analysis.');
       }
       if (validationResult.overallStatus === 'FAIL') {
         recommendations.push('Review document checksums and formatting inconsistencies.');
@@ -668,39 +694,26 @@ export class VerificationService {
       }
     } else if (overallVerificationStatus === 'WARNING') {
       recommendations.push('Manual scrutiny of optical fields recommended.');
+      if (nfcResult.readStatus === 'MISMATCH') {
+        recommendations.push('Investigate variance between visual text and signed chip data.');
+      }
       recommendations.push('Request clear high-resolution document scan.');
     } else {
-      recommendations.push('Standard clearance. All biometric, issuer, and forensic checks passed within threshold.');
+      recommendations.push('Standard clearance. All biometric, issuer, NFC, and forensic checks passed within threshold.');
     }
-
-    // Default RiskResult conforming to interface without running riskEngine.ts
-    const riskResult: RiskResult = {
-      score: 0,
-      level: overallVerificationStatus === 'FAILED' ? 'HIGH' : overallVerificationStatus === 'WARNING' ? 'MEDIUM' : 'LOW',
-      factors: [],
-      explanation: `Screening complete: Validation (${validationResult.overallStatus}), Issuer (${issuerResult.registryStatus}), Tampering (${tamperingResult.verdict}), Face (${faceResult.status}).`,
-      recommendation: overallVerificationStatus === 'FAILED'
-        ? 'Detailed forensic inspection recommended'
-        : overallVerificationStatus === 'WARNING'
-        ? 'Manual review recommended'
-        : 'Likely clear — Standard processing',
-    };
 
     // Build upgraded DocumentData object with updated fields
     const updatedDocumentData: DocumentData = {
-      ...ocrDocument,
+      ...ocrDocumentWithForensics,
       ocrFields: ocrResult.fields,
       validationItems: ValidationEngine.toLegacyValidationItems(validationResult),
-      issuerItems: IssuerService.toLegacyIssuerItems(issuerResult),
-      referenceComparison: issuerResult.referenceComparison,
-      suspiciousElements: TamperingService.toLegacySuspiciousElements(tamperingResult),
       faceMatchScore: faceResult.matchScore,
       faceMatchStatus: faceResult.status === 'PASS' ? 'Faces match' : 'Biometric review required',
-      riskScore: 0,
-      riskLevel: overallVerificationStatus === 'FAILED' ? 'HIGH RISK' : overallVerificationStatus === 'WARNING' ? 'MEDIUM RISK' : 'LOW RISK',
-      riskDescription: '',
-      riskContributors: [],
-      aiSummary: `Screening complete. Validation: ${validationResult.overallStatus} • Issuer: ${issuerResult.registryStatus} • Tampering: ${tamperingResult.verdict} • Face Match: ${faceResult.matchScore}%. Overall Status: ${overallVerificationStatus}.`,
+      riskScore: riskResult.score,
+      riskLevel: riskResult.level === 'HIGH' ? 'HIGH RISK' : riskResult.level === 'MEDIUM' ? 'MEDIUM RISK' : 'LOW RISK',
+      riskDescription: riskResult.explanation,
+      riskContributors: legacyRiskContributors,
+      aiSummary: `Screening complete. Validation: ${validationResult.overallStatus} • Issuer: ${issuerResult.registryStatus} • Tampering: ${tamperingResult.verdict} • NFC: ${nfcResult.readStatus} • Face Match: ${faceResult.matchScore}%. Risk Score: ${riskResult.score}/100 (${riskResult.level}). Overall Status: ${overallVerificationStatus}.`,
       processingTime: `${((performance.now() - startTime) / 1000).toFixed(1)} seconds`,
     };
 
@@ -720,7 +733,7 @@ export class VerificationService {
       referenceComparisonResult: issuerResult.referenceComparison,
       watchlist: watchlistResult,
       risk: riskResult,
-      evidence: [],
+      evidence,
       recommendations,
       auditTrail,
     };

@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/components/facecamerascreen.tsx","./src/components/header.tsx","./src/components/nfcscreen.tsx","./src/components/settingsmodal.tsx","./src/components/statustimeline.tsx","./src/services/api.ts"],"version":"6.0.3"}

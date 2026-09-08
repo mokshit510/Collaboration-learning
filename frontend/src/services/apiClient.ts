@@ -298,6 +298,72 @@ export class ApiClient {
       body: JSON.stringify(payload),
     });
   }
+
+  // ========================================================
+  // SESSION COORDINATION ENDPOINTS (DESKTOP & MOBILE PAIRING)
+  // ========================================================
+
+  public async getCurrentSession(): Promise<{ success: boolean; data: any }> {
+    return this.request<{ success: boolean; data: any }>('/v1/session/current');
+  }
+
+  public async initSession(sessionId?: string): Promise<{ success: boolean; data: any }> {
+    return this.request<{ success: boolean; data: any }>('/v1/session/init', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
+    });
+  }
+
+  public async getSessionById(sessionId: string): Promise<{ success: boolean; data: any }> {
+    return this.request<{ success: boolean; data: any }>(`/v1/session/${encodeURIComponent(sessionId)}`);
+  }
+
+  public async sendHeartbeat(sessionId: string, deviceInfo?: any): Promise<{ success: boolean; data: any }> {
+    return this.request<{ success: boolean; data: any }>(`/v1/session/${encodeURIComponent(sessionId)}/heartbeat`, {
+      method: 'POST',
+      body: JSON.stringify({ deviceInfo }),
+    });
+  }
+
+  public async updateSessionStage(
+    sessionId: string,
+    currentStage: number,
+    stageName: string,
+    additionalData?: any
+  ): Promise<{ success: boolean; data: any }> {
+    return this.request<{ success: boolean; data: any }>(`/v1/session/${encodeURIComponent(sessionId)}/stage`, {
+      method: 'POST',
+      body: JSON.stringify({ currentStage, stageName, ...additionalData }),
+    });
+  }
+
+  public async requestFaceCapture(sessionId: string): Promise<{ success: boolean; data: any }> {
+    return this.request<{ success: boolean; data: any }>(`/v1/session/${encodeURIComponent(sessionId)}/request-face`, {
+      method: 'POST',
+    });
+  }
+
+  public async getLatestNfc(sessionId: string): Promise<NfcResult | null> {
+    try {
+      const res = await this.request<{ success: boolean; data: NfcResult }>(
+        `/v1/nfc/latest?sessionId=${encodeURIComponent(sessionId)}`
+      );
+      return res.data || null;
+    } catch {
+      return null;
+    }
+  }
+
+  public async getLatestFace(sessionId: string): Promise<FaceResult | null> {
+    try {
+      const res = await this.request<{ success: boolean; data: FaceResult }>(
+        `/v1/face/latest?sessionId=${encodeURIComponent(sessionId)}`
+      );
+      return res.data || null;
+    } catch {
+      return null;
+    }
+  }
 }
 
 export const apiClient = new ApiClient();
