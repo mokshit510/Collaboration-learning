@@ -13,9 +13,10 @@ import {
 import type { DocumentData, DocumentType, DemoScenarioId, UploadState, UploadedDocument } from '../types';
 import { PassportDocumentView } from './PassportDocumentView';
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
+const UPLOAD_ERROR_MESSAGE = 'Only JPG, JPEG, PNG or WEBP images up to 2 MB are allowed.';
 
 function formatBytes(bytes: number): string {
   if (!bytes || bytes === 0) return '0 B';
@@ -37,6 +38,7 @@ interface DocumentUploadCardProps {
   uploadedDocument?: UploadedDocument | null;
   selectedScenario?: DemoScenarioId;
   onScenarioChange?: (scenario: DemoScenarioId) => void;
+  allowUpload?: boolean;
 }
 
 export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
@@ -51,6 +53,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
   uploadedDocument,
   selectedScenario = 'tampered',
   onScenarioChange,
+  allowUpload = true,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -97,7 +100,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
     if (!isMimeValid && !isExtValid) {
       setLocalValidation({
         status: 'ERROR',
-        error: 'Unsupported file format. Please upload JPG, PNG, or WEBP.',
+        error: UPLOAD_ERROR_MESSAGE,
       });
       return;
     }
@@ -106,7 +109,7 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
     if (file.size > MAX_FILE_SIZE_BYTES) {
       setLocalValidation({
         status: 'ERROR',
-        error: 'File is too large (max 10MB). Please choose a smaller document image.',
+        error: UPLOAD_ERROR_MESSAGE,
       });
       return;
     }
@@ -269,63 +272,75 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
               <span className="text-[10px] uppercase font-bold text-slate-600 bg-slate-200/80 px-1.5 py-0.5 rounded">
                 {activeType}
               </span>
-              <button
-                onClick={handleReset}
-                className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-slate-200/50 transition-colors cursor-pointer"
-                title="Remove uploaded document and reset"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+              {allowUpload && (
+                <button
+                  onClick={handleReset}
+                  className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-slate-200/50 transition-colors cursor-pointer"
+                  title="Remove uploaded document and reset"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
         )}
 
-        {/* Document Preview Area (Click or Drag-and-Drop) */}
+        {/* Document Preview Area (Click or Drag-and-Drop when allowUpload is true) */}
         <div
           onClick={() => {
-            if (!isUploaded) {
+            if (allowUpload && !isUploaded) {
               fileInputRef.current?.click();
             }
           }}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          className={`relative rounded-lg transition-all duration-200 cursor-pointer ${
-            isDragging ? 'ring-2 ring-blue-500 ring-offset-2 scale-[1.01]' : ''
+          onDragOver={allowUpload ? handleDragOver : undefined}
+          onDragLeave={allowUpload ? handleDragLeave : undefined}
+          onDrop={allowUpload ? handleDrop : undefined}
+          className={`relative rounded-lg transition-all duration-200 ${
+            allowUpload ? 'cursor-pointer' : 'cursor-default'
+          } ${
+            isDragging && allowUpload ? 'ring-2 ring-blue-500 ring-offset-2 scale-[1.01]' : ''
           }`}
-          title={isUploaded ? 'Document loaded' : 'Click or drop to upload document'}
+          title={
+            allowUpload
+              ? isUploaded
+                ? 'Document loaded'
+                : 'Click or drop to upload document'
+              : 'Document Preview'
+          }
         >
           <PassportDocumentView data={data} showTamperOverlay={false} />
 
-          {/* Idle upload drop prompt overlay (when not uploaded) */}
-          {!isUploaded && !isDragging && (
+          {/* Idle upload drop prompt overlay (only when allowUpload and not uploaded) */}
+          {allowUpload && !isUploaded && !isDragging && (
             <div className="absolute inset-0 rounded-md bg-slate-900/10 hover:bg-slate-900/20 border border-dashed border-blue-400/60 flex flex-col items-center justify-end p-2 transition-all group">
               <div className="bg-white/90 backdrop-blur-xs px-2.5 py-1 rounded-md shadow-xs flex items-center gap-1.5 text-slate-700 text-[10px] font-medium border border-slate-200/80 group-hover:scale-105 transition-transform">
                 <UploadCloud className="w-3.5 h-3.5 text-[#1677E8]" />
-                <span>Click to browse or drop JPG, PNG, WEBP (max 10MB)</span>
+                <span>Click to browse or drop JPG, PNG, WEBP (max 2 MB)</span>
               </div>
             </div>
           )}
 
           {/* Drag Overlay State */}
-          {isDragging && (
+          {allowUpload && isDragging && (
             <div className="absolute inset-0 bg-blue-600/90 rounded-lg flex flex-col items-center justify-center text-white backdrop-blur-xs z-20">
               <UploadCloud className="w-10 h-10 animate-bounce mb-1" />
               <p className="text-xs font-bold">Drop document image to load</p>
-              <p className="text-[10px] text-blue-200">JPG, PNG, WEBP (max 10MB)</p>
+              <p className="text-[10px] text-blue-200">JPG, PNG, WEBP (max 2 MB)</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Hidden File Input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
-        className="hidden"
-        onChange={handleFileChange}
-      />
+      {/* Hidden File Input (only rendered when allowUpload is true) */}
+      {allowUpload && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+      )}
 
       {/* Action Buttons Below Preview */}
       <div className="space-y-2 mt-3.5">
@@ -350,32 +365,37 @@ export const DocumentUploadCard: React.FC<DocumentUploadCardProps> = ({
           </button>
         )}
 
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center justify-center gap-1.5 py-2 px-3 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 transition-colors shadow-2xs cursor-pointer"
-          >
-            <RotateCw className="w-3.5 h-3.5 text-slate-500" />
-            <span>{isUploaded ? 'Replace Image' : 'Select Image'}</span>
-          </button>
+        {/* Upload buttons only rendered when allowUpload is true */}
+        {allowUpload && (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 transition-colors shadow-2xs cursor-pointer"
+              >
+                <RotateCw className="w-3.5 h-3.5 text-slate-500" />
+                <span>{isUploaded ? 'Replace Image' : 'Select Image'}</span>
+              </button>
 
-          <button
-            onClick={onScanWithCamera}
-            className="flex items-center justify-center gap-1.5 py-2 px-3 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 transition-colors shadow-2xs cursor-pointer"
-          >
-            <Camera className="w-3.5 h-3.5 text-slate-500" />
-            <span>Scan with Camera</span>
-          </button>
-        </div>
+              <button
+                onClick={onScanWithCamera}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 transition-colors shadow-2xs cursor-pointer"
+              >
+                <Camera className="w-3.5 h-3.5 text-slate-500" />
+                <span>Scan with Camera</span>
+              </button>
+            </div>
 
-        {isUploaded && onResetDocument && (
-          <button
-            onClick={handleReset}
-            className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-slate-100 hover:bg-slate-200/80 border border-slate-200 text-slate-600 hover:text-slate-800 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
-          >
-            <X className="w-3 h-3 text-slate-500" />
-            <span>Remove Upload & Reset to Default</span>
-          </button>
+            {isUploaded && onResetDocument && (
+              <button
+                onClick={handleReset}
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-slate-100 hover:bg-slate-200/80 border border-slate-200 text-slate-600 hover:text-slate-800 rounded-lg text-[11px] font-medium transition-colors cursor-pointer"
+              >
+                <X className="w-3 h-3 text-slate-500" />
+                <span>Remove Upload & Reset to Default</span>
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

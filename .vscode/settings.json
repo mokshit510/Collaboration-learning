@@ -1,0 +1,6 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/ai-services/ocr/.venv/bin/python",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/ai-services/ocr"
+  ]
+}

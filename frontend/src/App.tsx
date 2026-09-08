@@ -21,7 +21,6 @@ import { DocumentValidationCard } from './components/DocumentValidationCard';
 import { IssuerVerificationCard } from './components/IssuerVerificationCard';
 import { TamperingAnalysisCard } from './components/TamperingAnalysisCard';
 import { FaceVerificationCard } from './components/FaceVerificationCard';
-import { RiskAssessmentCard } from './components/RiskAssessmentCard';
 import { AiSummaryCard } from './components/AiSummaryCard';
 import { ActionButtons } from './components/ActionButtons';
 import { DetailedReportModal } from './components/DetailedReportModal';
@@ -33,7 +32,7 @@ import { AuthorityDashboard } from './pages/AuthorityDashboard';
 export function App() {
   // Navigation & Role/Portal Mode
   const [activeNav, setActiveNav] = useState('dashboard');
-  const [showNewVerification, setShowNewVerification] = useState(false);
+  const isNewVerification = activeNav === 'new_verification';
   const [currentPortal, setCurrentPortal] = useState<'authority' | 'investigator'>(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.toLowerCase();
@@ -106,8 +105,8 @@ export function App() {
     };
   }, [cleanupObjectUrl]);
 
-  // Pipeline Step & Data-driven states
-  const [currentStep, setCurrentStep] = useState<number>(7);
+  // Pipeline Step & Data-driven states (7 stages without Risk Assessment)
+  const [currentStep, setCurrentStep] = useState<number>(1);
   const [stepStates, setStepStates] = useState<Record<number, PipelineStepStatus>>({
     1: 'COMPLETED',
     2: 'COMPLETED',
@@ -115,8 +114,7 @@ export function App() {
     4: 'COMPLETED',
     5: 'FAILED',
     6: 'COMPLETED',
-    7: 'WARNING',
-    8: 'NOT_STARTED',
+    7: 'NOT_STARTED',
   });
   const [stepMessages, setStepMessages] = useState<Record<number, string>>({});
   const [processingTime, setProcessingTime] = useState<string>('12.4 seconds');
@@ -130,10 +128,11 @@ export function App() {
 
   // Handle Sidebar navigation
   const handleNavClick = (navId: string) => {
-    setActiveNav(navId);
     if (navId === 'past_records') {
       setIsPastRecordsOpen(true);
+      return;
     }
+    setActiveNav(navId);
   };
 
   // Switch Document Type
@@ -176,7 +175,7 @@ export function App() {
     setCurrentStep(1);
     setInvestigationStatus('unflagged');
 
-    // Reset step states
+    // Reset step states (7 stages)
     setStepStates({
       1: 'PROCESSING',
       2: 'NOT_STARTED',
@@ -185,7 +184,6 @@ export function App() {
       5: 'NOT_STARTED',
       6: 'NOT_STARTED',
       7: 'NOT_STARTED',
-      8: 'NOT_STARTED',
     });
     setStepMessages({});
 
@@ -194,7 +192,7 @@ export function App() {
       const result = await VerificationService.runVerification(
         documentData,
         scenarioToUse,
-        (stepIndex, _stepName, status, details) => {
+        (stepIndex, _stepName, status, details, intermediateDoc) => {
           setCurrentStep(stepIndex);
           setStepStates((prev) => ({
             ...prev,
@@ -207,6 +205,10 @@ export function App() {
               [stepIndex]: details
             }));
           }
+
+          if (intermediateDoc) {
+            setDocumentData(intermediateDoc);
+          }
         },
         uploadedDocument?.file
       );
@@ -214,31 +216,40 @@ export function App() {
       setVerificationResult(result);
       setDocumentData(result.document);
       setProcessingTime(result.document.processingTime);
-      setCurrentStep(8);
+      setCurrentStep(7);
 
-      if (result.risk.score >= 60) {
+      if (result.status === 'FAILED') {
         addToast(
-          'warning',
-          'High Risk Anomalies Detected',
-          `Risk Score: ${result.risk.score}/100. ${result.recommendations[0]}`
+          'error',
+          'Verification Flagged',
+          result.recommendations[0] || 'Anomalies detected in document screening.'
         );
-      } else if (result.risk.score >= 30) {
+      } else if (result.status === 'WARNING') {
         addToast(
           'warning',
-          'Medium Risk — Review Required',
-          `Risk Score: ${result.risk.score}/100. Verification requires supervisory review.`
+          'Verification Review Required',
+          result.recommendations[0] || 'Verification requires supervisory review.'
         );
       } else {
         confetti({ particleCount: 60, spread: 60, origin: { y: 0.8 } });
         addToast(
           'success',
           'Verification Cleared',
-          `All checks passed within normal thresholds (Risk: ${result.risk.score}/100).`
+          'All document and identity checks passed within normal thresholds.'
         );
       }
     } catch (err) {
       console.error('[Pipeline] Execution error:', err);
-      addToast('error', 'Pipeline Error', 'Verification pipeline interrupted.');
+      const errorMessage = err instanceof Error ? err.message : 'Backend OCR service unavailable.';
+      setStepStates((prev) => ({
+        ...prev,
+        2: 'FAILED',
+      }));
+      setStepMessages((prev) => ({
+        ...prev,
+        2: errorMessage,
+      }));
+      addToast('error', 'OCR Processing Failed', errorMessage);
     } finally {
       setIsSimulating(false);
     }
@@ -299,7 +310,7 @@ export function App() {
       setDocumentData(documentInput);
       setInvestigationStatus('unflagged');
 
-      // 5. Reset pipeline to READY status
+      // 5. Reset pipeline to READY status (7 stages)
       setCurrentStep(1);
       setStepStates({
         1: 'COMPLETED',
@@ -309,7 +320,6 @@ export function App() {
         5: 'NOT_STARTED',
         6: 'NOT_STARTED',
         7: 'NOT_STARTED',
-        8: 'NOT_STARTED',
       });
       setStepMessages({ 1: `Ingested ${file.name} (${(file.size / 1024).toFixed(1)} KB)` });
 
@@ -319,7 +329,6 @@ export function App() {
         `${file.name} loaded. Click 'Run Pipeline' to verify.`
       );
 
-      setShowNewVerification(false);
       setActiveNav('dashboard');
     },
     [activeType, cleanupObjectUrl, addToast]
@@ -341,7 +350,6 @@ export function App() {
       5: 'NOT_STARTED',
       6: 'NOT_STARTED',
       7: 'NOT_STARTED',
-      8: 'NOT_STARTED',
     });
     setStepMessages({});
     addToast('info', 'Document Removed', `Restored default ${activeType.toUpperCase()} template.`);
@@ -353,9 +361,8 @@ export function App() {
     handleFileUpload(file);
   };
 
-  // Action: Save to Records
+  // Action: Save to Records (Saves and then clears active verification cleanly)
   const handleSaveToRecords = () => {
-    setInvestigationStatus('saved');
     if (verificationResult) {
       VerificationService.saveVerificationRecord(
         verificationResult,
@@ -367,8 +374,10 @@ export function App() {
     addToast(
       'success',
       'Saved to Investigation Records',
-      `Record #${documentData.documentNumber} archived in checkpoint registry.`
+      `Record #${documentData.documentNumber || 'PRM'} archived in checkpoint registry.`
     );
+    // End and clear active verification session
+    handleClear();
   };
 
   // Action: Flag for Investigation
@@ -406,7 +415,6 @@ export function App() {
       5: 'NOT_STARTED',
       6: 'NOT_STARTED',
       7: 'NOT_STARTED',
-      8: 'NOT_STARTED',
     });
     setStepMessages({});
     setProcessingTime('0.0 seconds');
@@ -442,8 +450,6 @@ export function App() {
         activeNav={activeNav}
         setActiveNav={handleNavClick}
         onNewVerification={() => {
-          handleClear();
-          setShowNewVerification(true);
           setActiveNav('new_verification');
         }}
         onSwitchToAuthority={() => handleSwitchPortal('authority')}
@@ -453,7 +459,7 @@ export function App() {
 
         <Header investigationStatus={investigationStatus} />
 
-        {showNewVerification ? (
+        {isNewVerification ? (
           /* =====================================================
              NEW VERIFICATION — UPLOAD SCREEN
              ===================================================== */
@@ -483,14 +489,14 @@ export function App() {
                   </h2>
 
                   <p className="text-xs text-slate-500 mt-1">
-                    Supported formats: JPG, PNG and WEBP. Maximum file size: 10MB.
+                    Supported formats: JPG, JPEG, PNG and WEBP. Maximum file size: 2 MB.
                   </p>
                 </div>
 
                 <DocumentUploadCard
                   data={documentData}
                   activeType={activeType}
-                  uploadedDocument={null}
+                  uploadedDocument={uploadedDocument}
                   selectedScenario={selectedScenario}
                   onScenarioChange={undefined}
                   onTypeChange={handleTypeChange}
@@ -499,7 +505,22 @@ export function App() {
                   onStartVerification={undefined}
                   isSimulating={false}
                   onScanWithCamera={() => setIsCameraModalOpen(true)}
+                  allowUpload={true}
                 />
+
+                {uploadedDocument && (
+                  <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between">
+                    <span className="text-xs text-blue-800 font-medium">
+                      Active verification session exists for <strong>{uploadedDocument.fileName}</strong>.
+                    </span>
+                    <button
+                      onClick={() => setActiveNav('dashboard')}
+                      className="text-xs font-semibold text-blue-700 hover:text-blue-900 bg-white border border-blue-300 px-2.5 py-1 rounded-lg cursor-pointer"
+                    >
+                      Return to Dashboard →
+                    </button>
+                  </div>
+                )}
 
                 <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
 
@@ -554,7 +575,7 @@ export function App() {
 
                       <p className="text-xs text-amber-700 mt-1">
                         Uploading only prepares the document. OCR, validation,
-                        tampering analysis, face verification and risk assessment
+                        tampering analysis, and face verification
                         start only after you manually click
                         <strong> Run Pipeline</strong> on the dashboard.
                       </p>
@@ -601,17 +622,27 @@ export function App() {
                   onStartVerification={handleStartSimulation}
                   isSimulating={isSimulating}
                   onScanWithCamera={() => setIsCameraModalOpen(true)}
+                  allowUpload={false}
                 />
 
               </div>
 
               <div className="lg:col-span-4 space-y-4">
 
-                <OcrExtractionCard fields={documentData.ocrFields} />
+                <OcrExtractionCard
+                  fields={documentData.ocrFields}
+                  mrzLine={documentData.mrzLine2 || documentData.mrzLine1}
+                  qualityStatus={verificationResult?.ocr?.qualityStatus}
+                  averageConfidence={verificationResult?.ocr?.averageConfidence}
+                />
 
                 <DocumentValidationCard items={documentData.validationItems} />
 
-                <IssuerVerificationCard items={documentData.issuerItems} />
+                <IssuerVerificationCard
+                  items={documentData.issuerItems}
+                  referenceComparison={documentData.referenceComparison}
+                  documentNumber={documentData.documentNumber}
+                />
 
               </div>
 
@@ -623,11 +654,6 @@ export function App() {
                 />
 
                 <FaceVerificationCard data={documentData} />
-
-                <RiskAssessmentCard
-                  data={documentData}
-                  onOpenReport={() => setIsReportModalOpen(true)}
-                />
 
               </div>
 

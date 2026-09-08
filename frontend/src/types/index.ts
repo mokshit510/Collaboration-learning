@@ -40,6 +40,8 @@ export interface OcrField {
   confidence: number;
   valid: boolean;
   status?: 'PASS' | 'WARNING' | 'FAIL';
+  confidenceSource?: string;
+  lowConfidence?: boolean;
 }
 
 export interface ValidationItem {
@@ -114,6 +116,7 @@ export interface DocumentData {
     type: string;
     lastModified?: number;
   };
+  referenceComparison?: SyntheticReferenceResult;
 }
 
 export type InvestigationStatus = 'unflagged' | 'flagged' | 'saved';
@@ -135,10 +138,35 @@ export interface OcrResult {
     expiryDate: string;
     optionalData?: string;
     compositeChecksumValid: boolean;
+    // MRZ metadata extensions
+    surname?: string;
+    givenName?: string;
+    givenNames?: string;
+    mrzDetected?: boolean;
+    mrzComplete?: boolean;
+    line1?: string;
+    line2?: string;
+    checksumStatus?: Record<string, string>;
+    checksumValidation?: Record<string, string>;
+    checksumDetails?: Record<string, boolean>;
+    parseWarnings?: string[];
   };
   rawText?: string;
   averageConfidence: number;
   qualityStatus: 'OPTIMAL' | 'MODERATE' | 'LOW';
+  confidenceSource?: string;
+  mrz?: Record<string, unknown>;
+  mrzValidation?: Record<string, unknown>;
+  vizDetected?: boolean;
+  vizFields?: OcrField[];
+  vizWarnings?: string[];
+  validation?: Array<{
+    field: string;
+    value: string;
+    status: string;
+    message: string;
+  }>;
+  warnings?: string[];
 }
 
 export interface ValidationRuleCheck {
@@ -164,11 +192,49 @@ export interface ValidationResult {
   };
 }
 
+export interface ReferenceFieldMismatch {
+  field: string;
+  label?: string;
+  extractedValue: string;
+  referenceValue: string;
+}
+
+export interface SyntheticReferenceRecord {
+  id?: string;
+  documentNumber: string;
+  documentType: string;
+  countryCode?: string;
+  fullName?: string;
+  surname?: string;
+  givenNames?: string;
+  nationality?: string;
+  dob?: string;
+  gender?: string;
+  placeOfBirth?: string;
+  issueDate?: string;
+  expiryDate?: string;
+  status: string;
+  scenario: string;
+}
+
+export interface SyntheticReferenceResult {
+  found: boolean;
+  status: 'VERIFIED' | 'MISMATCH' | 'EXPIRED' | 'BLACKLISTED' | 'SUSPICIOUS' | 'NOT_FOUND';
+  source: string;
+  simulated: boolean;
+  documentNumber: string;
+  matchedFields: string[];
+  mismatchedFields: ReferenceFieldMismatch[];
+  referenceRecord?: SyntheticReferenceRecord | null;
+  message?: string;
+  timestamp?: string;
+}
+
 export interface IssuerResult {
   isSimulated: boolean;
   disclaimer: string;
   documentFound: boolean;
-  registryStatus: 'ACTIVE' | 'REVOKED' | 'EXPIRED' | 'SUSPENDED' | 'NOT_FOUND';
+  registryStatus: 'ACTIVE' | 'REVOKED' | 'EXPIRED' | 'SUSPENDED' | 'NOT_FOUND' | 'BLACKLISTED' | 'SUSPICIOUS' | 'MISMATCH' | 'VERIFIED';
   issuerMatch: boolean;
   issuingAuthority: string;
   digitalSignatureValid: boolean;
@@ -176,6 +242,7 @@ export interface IssuerResult {
   identityMatch: boolean;
   timestamp: string;
   source: string;
+  referenceComparison?: SyntheticReferenceResult;
 }
 
 export interface TamperingIndicator {
@@ -335,6 +402,7 @@ export interface VerificationResult {
   faceVerification: FaceResult;
   nfcVerification: NfcResult;
   referenceComparison: ReferenceResult;
+  referenceComparisonResult?: SyntheticReferenceResult;
   watchlist: WatchlistResult;
   risk: RiskResult;
   evidence: EvidenceItem[];

@@ -12,8 +12,13 @@ export function notFoundHandler(req, res, next) {
  * Global application error handler
  */
 export function errorHandler(err, req, res, next) {
-  const statusCode = err.statusCode || err.status || 500;
-  const message = err.message || 'Internal Server Error';
+  let statusCode = err.statusCode || err.status || 500;
+  let message = err.message || 'Internal Server Error';
+
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    statusCode = 400;
+    message = 'Only JPG, JPEG, PNG or WEBP images up to 2 MB are allowed.';
+  }
 
   console.error(`[Error] ${req.method} ${req.originalUrl}:`, err);
 

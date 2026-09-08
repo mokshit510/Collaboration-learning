@@ -6,15 +6,19 @@ let supabaseAdmin = null;
 
 if (config.supabase.isConfigured) {
   try {
-    supabaseClient = createClient(config.supabase.url, config.supabase.anonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    });
+    const keyToUse = config.supabase.anonKey || config.supabase.secretKey || config.supabase.serviceRoleKey;
+    if (keyToUse) {
+      supabaseClient = createClient(config.supabase.url, keyToUse, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      });
+    }
 
-    if (config.supabase.serviceRoleKey && !config.supabase.serviceRoleKey.includes('placeholder')) {
-      supabaseAdmin = createClient(config.supabase.url, config.supabase.serviceRoleKey, {
+    const adminKey = config.supabase.secretKey || config.supabase.serviceRoleKey;
+    if (adminKey && !adminKey.includes('placeholder')) {
+      supabaseAdmin = createClient(config.supabase.url, adminKey, {
         auth: {
           persistSession: false,
           autoRefreshToken: false,

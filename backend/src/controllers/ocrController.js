@@ -22,14 +22,31 @@ export class OcrController {
     } catch (err) {
       console.error('[OCR] Processing failed:', err.message);
 
-      if (err.response) {
-        console.error(
-          '[OCR] Python service response:',
-          err.response.data
+      if (err.code === 'ECONNREFUSED' || err.message?.includes('ECONNREFUSED')) {
+        return sendError(
+          res,
+          'OCR service is currently unavailable. Please verify the AI service is running.',
+          503
         );
       }
 
-      next(err);
+      if (err.response) {
+        console.error(
+          '[OCR] Python service response error:',
+          err.response.data
+        );
+        const detail =
+          err.response.data?.detail ||
+          err.response.data?.message ||
+          'OCR processing failed on AI service.';
+        return sendError(res, detail, err.response.status || 500);
+      }
+
+      return sendError(
+        res,
+        err.message || 'OCR processing failed.',
+        err.statusCode || err.status || 500
+      );
     }
   }
 }

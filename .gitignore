@@ -26,4 +26,4 @@ venv/
 __pycache__/
 *.pyc
 .pytest_cache/
-ai-service/*.jpg
+ai-service/*.jpg

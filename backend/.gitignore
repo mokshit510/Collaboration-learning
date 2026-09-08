@@ -1,5 +1,12 @@
+# Backend specific .gitignore
 node_modules/
 .env
-uploads/
+.env.*
+!.env.example
+*.log
 logs/
-.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.temp/
+tmp/

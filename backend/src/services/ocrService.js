@@ -40,21 +40,31 @@ class OcrService {
     const fields = (result.fields || []).map((field) => {
       const validation = validationMap.get(field.label);
 
-      let status = 'WARNING';
-
+      let status = 'PASS';
       if (validation) {
-        status =
-          validation.status === 'VALID'
-            ? 'PASS'
-            : 'FAIL';
+        status = validation.status === 'VALID' ? 'PASS' : 'FAIL';
+      } else if (field.status) {
+        status = field.status === 'VALID' ? 'PASS' : field.status;
+      } else if (field.confidence !== undefined && field.confidence < 70) {
+        status = 'FAIL';
+      } else if (field.confidence !== undefined && field.confidence < 85) {
+        status = 'WARNING';
       }
+
+      const isValid = validation
+        ? validation.status === 'VALID'
+        : field.status
+        ? field.status === 'VALID'
+        : status === 'PASS';
 
       return {
         label: field.label,
         value: field.value,
         confidence: field.confidence ?? 0,
-        valid: validation?.status === 'VALID',
+        valid: isValid,
         status,
+        confidenceSource: field.confidenceSource || 'tesseract',
+        lowConfidence: field.lowConfidence || false,
       };
     });
 
@@ -73,34 +83,74 @@ class OcrService {
         : 0;
 
     let qualityStatus = 'LOW';
-
     if (averageConfidence >= 90) {
       qualityStatus = 'OPTIMAL';
     } else if (averageConfidence >= 75) {
       qualityStatus = 'MODERATE';
     }
 
+    const mrzParsed = result.mrz
+      ? {
+          documentType: result.mrz.documentType ?? '',
+          issuingCountry: result.mrz.issuingCountry ?? '',
+          holderName: result.mrz.holderName ?? '',
+          surname: result.mrz.surname ?? '',
+          givenName: result.mrz.givenName ?? '',
+          givenNames: result.mrz.givenNames ?? '',
+          documentNumber: result.mrz.documentNumber ?? '',
+          nationality: result.mrz.nationality ?? '',
+          dob: result.mrz.dob ?? '',
+          gender: result.mrz.gender ?? '',
+          expiryDate: result.mrz.expiryDate ?? '',
+          optionalData: result.mrz.optionalData ?? '',
+          compositeChecksumValid: result.mrz.compositeChecksumValid ?? false,
+          mrzDetected: result.mrz.mrzDetected ?? false,
+          mrzComplete: result.mrz.mrzComplete ?? false,
+          line1: result.mrz.line1 ?? '',
+          line2: result.mrz.line2 ?? '',
+          checksumStatus: result.mrz.checksumStatus || {},
+          checksumValidation: result.mrz.checksumValidation || {},
+          checksumDetails: result.mrz.checksumDetails || {},
+          parseWarnings: result.mrz.parseWarnings || [],
+        }
+      : {
+          documentType: '',
+          issuingCountry: '',
+          holderName: '',
+          surname: '',
+          givenName: '',
+          givenNames: '',
+          documentNumber: '',
+          nationality: '',
+          dob: '',
+          gender: '',
+          expiryDate: '',
+          optionalData: '',
+          compositeChecksumValid: false,
+          mrzDetected: false,
+          mrzComplete: false,
+          line1: '',
+          line2: '',
+          checksumStatus: {},
+          checksumValidation: {},
+          checksumDetails: {},
+          parseWarnings: [],
+        };
+
     return {
       fields,
-
-      mrzParsed: {
-        documentType: '',
-        issuingCountry: '',
-        holderName: '',
-        documentNumber: '',
-        nationality: '',
-        dob: '',
-        gender: '',
-        expiryDate: '',
-        optionalData: '',
-        compositeChecksumValid: false,
-      },
-
+      mrzParsed,
+      mrz: result.mrz,
+      mrzValidation: result.mrzValidation,
       rawText: result.text || '',
-
       averageConfidence,
-
       qualityStatus,
+      confidenceSource: fields[0]?.confidenceSource || 'tesseract',
+      vizDetected: result.vizDetected ?? (fields.length > 0),
+      vizFields: result.vizFields || fields,
+      vizWarnings: result.vizWarnings || [],
+      validation: result.validation || [],
+      warnings: result.warnings || result.vizWarnings || [],
     };
   }
 

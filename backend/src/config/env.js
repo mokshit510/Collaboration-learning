@@ -10,12 +10,12 @@ export const config = {
   supabase: {
     url: process.env.SUPABASE_URL || '',
     anonKey: process.env.SUPABASE_ANON_KEY || '',
-    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '',
+    secretKey: process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
     isConfigured: Boolean(
       process.env.SUPABASE_URL &&
       !process.env.SUPABASE_URL.includes('placeholder') &&
-      process.env.SUPABASE_ANON_KEY &&
-      !process.env.SUPABASE_ANON_KEY.includes('placeholder')
+      (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)
     ),
   },
   ai: {
