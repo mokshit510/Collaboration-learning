@@ -180,11 +180,12 @@ async def verify_face_endpoint(
     # Fallback to full doc_image if it was already a tight reference portrait crop
     face_for_comparison = doc_crop if doc_crop is not None else doc_image
 
-    # 4. Biometric FaceNet512 verification
+    # 4. Biometric FaceNet512 verification (calibrated for physical ID scan vs live selfie)
     verification = verify_faces(
         document_face=face_for_comparison,
         live_face=live_image,
         model_name="Facenet512",
+        threshold=0.65 if doc_crop is not None else None,
     )
 
     return {
@@ -193,6 +194,7 @@ async def verify_face_endpoint(
             "detected": extraction.get("detected", False),
             "face_count": extraction.get("face_count", 0),
             "bbox": extraction.get("bbox"),
+            "orientation": extraction.get("orientation", 0),
             "warning": extraction.get("warning"),
         },
         "verification": verification,
@@ -331,6 +333,7 @@ async def analyze(
                         document_face=doc_face_crop,
                         live_face=live_image,
                         model_name="Facenet512",
+                        threshold=0.65,
                     )
                 else:
                     face_verification["error"] = "Cannot verify face: No portrait face was detected on document"

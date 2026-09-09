@@ -46,7 +46,8 @@ def verify_faces(
     source_face: Optional[np.ndarray] = None,
     target_face: Optional[np.ndarray] = None,
     model_name: str = "Facenet512",
-    detector_backend: str = "opencv",
+    detector_backend: str = "yunet",
+    threshold: Optional[float] = None,
     check_rotations: bool = True,
 ) -> Dict[str, Any]:
     """
@@ -137,20 +138,34 @@ def verify_faces(
         doc_rgb = cv2.cvtColor(doc_img, cv2.COLOR_BGR2RGB)
         live_rgb = cv2.cvtColor(live_img, cv2.COLOR_BGR2RGB)
 
-        # Primary verification pass at current orientation
-        result = DeepFace.verify(
-            img1_path=doc_rgb,
-            img2_path=live_rgb,
-            model_name=model_name,
-            detector_backend=detector_backend,
-            distance_metric="cosine",
-            enforce_detection=False,
-            align=True,
-        )
+        # Primary verification pass at current orientation with backend fallback
+        try:
+            result = DeepFace.verify(
+                img1_path=doc_rgb,
+                img2_path=live_rgb,
+                model_name=model_name,
+                detector_backend=detector_backend,
+                distance_metric="cosine",
+                enforce_detection=False,
+                align=True,
+            )
+            used_backend = detector_backend
+        except Exception:
+            used_backend = "opencv"
+            result = DeepFace.verify(
+                img1_path=doc_rgb,
+                img2_path=live_rgb,
+                model_name=model_name,
+                detector_backend=used_backend,
+                distance_metric="cosine",
+                enforce_detection=False,
+                align=True,
+            )
 
-        verified = bool(result.get("verified", False))
         distance = float(result.get("distance", 1.0))
-        threshold = float(result.get("threshold", 0.40))
+        model_threshold = float(result.get("threshold", 0.40))
+        effective_threshold = float(threshold) if threshold is not None else model_threshold
+        verified = distance <= effective_threshold
         best_angle = 0
 
         # If not verified on initial orientation, check if live face was captured sideways or upside down
@@ -163,18 +178,18 @@ def verify_faces(
                         img1_path=doc_rgb,
                         img2_path=rot_live,
                         model_name=model_name,
-                        detector_backend=detector_backend,
+                        detector_backend=used_backend,
                         distance_metric="cosine",
                         enforce_detection=False,
                         align=True,
                     )
                     rot_dist = float(rot_res.get("distance", 1.0))
-                    rot_ver = bool(rot_res.get("verified", False))
+                    rot_thresh = float(threshold) if threshold is not None else float(rot_res.get("threshold", effective_threshold))
 
-                    if rot_ver and rot_dist <= threshold:
+                    if rot_dist <= rot_thresh:
                         verified = True
                         distance = rot_dist
-                        threshold = float(rot_res.get("threshold", threshold))
+                        effective_threshold = rot_thresh
                         best_angle = angle
                         break
                     elif rot_dist < best_distance:
@@ -182,13 +197,13 @@ def verify_faces(
                 except Exception:
                     pass
 
-        match_score = calculate_match_score(distance, threshold)
+        match_score = calculate_match_score(distance, effective_threshold)
 
         return {
             "available": True,
             "verified": verified,
             "distance": round(distance, 4),
-            "threshold": round(threshold, 4),
+            "threshold": round(effective_threshold, 4),
             "match_score": match_score,
             "orientation_adjusted": best_angle,
             "model": model_name,
