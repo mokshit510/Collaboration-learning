@@ -16,6 +16,7 @@ import type {
   NfcResult,
   SyntheticReferenceResult,
   WatchlistResult,
+  NetworkInfoResponse,
 } from '../types';
 
 export const API_BASE_URL =
@@ -462,6 +463,30 @@ export class ApiClient {
     } catch {
       return null;
     }
+  }
+
+  public async getNetworkInfo(): Promise<NetworkInfoResponse> {
+    const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+    if (!this.isMock) {
+      try {
+        const res = await this.request<{ success: boolean; data: NetworkInfoResponse }>('/v1/network');
+        if (res.data) return res.data;
+      } catch {
+        // Fallback below
+      }
+    }
+    return {
+      candidates: [
+        { name: 'Local Network (Auto)', address: hostname, url: `http://${hostname}:5174` }
+      ],
+      port: 5174,
+      mobileUrl: `http://${hostname}:5174`,
+      isHttps: false,
+      interfaceName: 'Wi-Fi / Ethernet',
+      ipv4: hostname,
+      protocol: 'http',
+      backendUrl: this.baseUrl
+    };
   }
 }
 

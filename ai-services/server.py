@@ -13,6 +13,10 @@ from fastapi.middleware.cors import CORSMiddleware
 # Ensure UTF-8 output on Windows
 os.environ.setdefault("PYTHONUTF8", "1")
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 OCR_DIR = os.path.join(CURRENT_DIR, "ocr")

@@ -472,3 +472,22 @@ export interface DemoScenario {
   targetRiskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
   documentData: DocumentData;
 }
+
+export interface NetworkCandidate {
+  name?: string;
+  address: string;
+  url?: string;
+  type?: string;
+}
+
+export interface NetworkInfoResponse {
+  candidates?: NetworkCandidate[];
+  port?: number;
+  mobileUrl?: string;
+  isHttps?: boolean;
+  interfaceName?: string;
+  ipv4?: string;
+  protocol?: string;
+  backendUrl?: string;
+}
+

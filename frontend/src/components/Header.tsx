@@ -49,7 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
       const info = await apiClient.getNetworkInfo();
       setNetworkInfo((prev) => {
         // If the previously selected address still exists, preserve candidate index
-        if (prev && info.candidates?.length) {
+        if (prev?.candidates?.length && info.candidates?.length) {
           const prevAddress = prev.candidates[selectedCandidateIndex]?.address;
           const matchIdx = info.candidates.findIndex((c) => c.address === prevAddress);
           if (matchIdx !== -1) {
@@ -321,7 +321,7 @@ export const Header: React.FC<HeaderProps> = ({
                             : 'bg-[#081729] border-[#153457] text-slate-400 hover:text-slate-200 hover:border-slate-600'
                         }`}
                       >
-                        {cand.type === 'wifi' || cand.type === 'wireless' || cand.name.toLowerCase().includes('wi-fi') ? (
+                        {cand.type === 'wifi' || cand.type === 'wireless' || (cand.name && cand.name.toLowerCase().includes('wi-fi')) ? (
                           <Wifi className={`w-4 h-4 shrink-0 ${isSelected ? 'text-blue-400' : 'text-slate-500'}`} />
                         ) : (
                           <Cable className={`w-4 h-4 shrink-0 ${isSelected ? 'text-blue-400' : 'text-slate-500'}`} />
