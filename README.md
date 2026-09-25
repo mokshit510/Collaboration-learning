@@ -505,4 +505,38 @@ PRAMAAN includes 5 realistic scenarios selectable directly from the **Scenario S
 ## 31. Disclaimer
 > "PRAMAAN is a Smart India Hackathon / research prototype. Issuer verification, watchlist data, NFC credentials and reference data are simulated unless explicitly connected to an authorized production service. The system is designed as a decision-support and screening tool and does not replace official identity, immigration or law-enforcement systems."
 
+---
+
+## 32. Live Deployment on Vercel
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmokshit510%2FCollaboration-learning)
+
+PRAMAAN features a **unified zero-config Vercel build architecture** that compiles and deploys both the **Desktop Investigator Portal** and the **Mobile Companion App** under a single high-performance edge URL.
+
+### 🚀 Live Preview Links
+* **Desktop Investigator & Authority Console:** [https://temporary-sonic-perseus-dlx7l1v.vercel.app](https://temporary-sonic-perseus-dlx7l1v.vercel.app)
+* **Mobile Companion Web App:** [https://temporary-sonic-perseus-dlx7l1v.vercel.app/mobile](https://temporary-sonic-perseus-dlx7l1v.vercel.app/mobile)
+* **Claim Deployment (to keep permanently in your Vercel account):** [Claim Deployment](https://vercel.com/claim-deployment?code=46f82d35-67ef-491b-8842-cd3d6df32c3e)
+
+### 📲 How Mobile Companion Pairing Works Live on Vercel
+1. Open the live deployment URL on your desktop or laptop: `https://<your-project>.vercel.app/`.
+2. Click **Connect Phone** in the top navigation bar.
+3. The dynamic QR code automatically detects the cloud environment and generates:  
+   `https://<your-project>.vercel.app/mobile/?session=PRM-YYYYMMDD-XXXX`
+4. Scan the QR code using any smartphone camera — the mobile companion opens instantly with full camera and WebNFC capabilities, perfectly linked to your desktop session!
+
+### ⚙️ Quick Deploy from GitHub to Vercel (1-Minute Setup)
+1. Push or fork `https://github.com/mokshit510/Collaboration-learning`.
+2. Go to [Vercel Dashboard](https://vercel.com/new).
+3. Select **Import Git Repository** and choose `Collaboration-learning`.
+4. Keep the default settings:
+   * **Root Directory:** `./` (Leave as default — root `vercel.json` and `package.json` handle the build)
+   * **Build Command:** `node scripts/build-vercel.js` (automatically detected)
+   * **Output Directory:** `frontend/dist` (automatically detected)
+5. *(Optional)* If connecting to a custom backend, add Environment Variables:
+   * `VITE_USE_MOCK` = `false`
+   * `VITE_API_BASE_URL` = `https://your-backend-api.com/api`
+6. Click **Deploy**.
+
+
 

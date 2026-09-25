@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "buildCommand": "node scripts/build-vercel.js",
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
+    {
+      "source": "/mobile/:path*",
+      "destination": "/mobile/index.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "pramaan-collaboration-learning",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-vercel.js",
+    "vercel-build": "node scripts/build-vercel.js",
+    "test": "npm --prefix frontend test"
+  }
+}
